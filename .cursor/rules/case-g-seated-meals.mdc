@@ -1,0 +1,25 @@
+---
+description: "Project context for Case G: Seated Meals (client, status, and what the first meeting must settle)"
+alwaysApply: true
+---
+
+# Case G: Seated Meals
+
+## Client
+- **Mr. Gibbs**, Associate Head of School, Pomfret School.
+
+## Team
+- Developers: **not yet assigned**. Club lead: Cayden Auyang. Update this line and `.github/CODEOWNERS` when developers are assigned.
+
+## Status
+- First meeting being scheduled. No code yet. How tables are balanced, how waiters rotate and what the finished lists look like are **open**; do not invent them. When helping here, ask what Mr. Gibbs said in the first meeting, then record the answers in `README.md` and in this rule.
+
+## Likely direction (not a commitment)
+- Balancing tables and rotating waiters is a puzzle with clear rules, so the finished tool may not need AI at all.
+
+## Guidance for the first build
+- Prefer Google Workspace (Sheets, Apps Script) over new infrastructure.
+- Nobody at Pomfret has Sundial API access (see the case-d-roster-export README). Student lists would come from an export Mr. Gibbs's office runs inside the school's own account.
+- Never commit real names, tables or exports. Build and test with made-up students only, and say so in the README.
+- Add a `.env.example` the moment any credential or ID is needed.
+- This is the same kind of placement problem as Case F (`case-f-project-pomfret`), so code or ideas may be shared between the two.
