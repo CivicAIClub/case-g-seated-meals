@@ -7,7 +7,7 @@ Mr. Gibbs, Associate Head of School at Pomfret School, is the client for this ca
 | | |
 |---|---|
 | **Client** | Mr. Gibbs, Associate Head of School, Pomfret School |
-| **Developers** | _Not yet assigned_ |
+| **Developers** | Abdul Hakim Al Khamisi, Lexi Godwin, Logan Lee, Keke Li (lead developer), Luke Ryan (vice president) |
 | **Club lead** | Cayden Auyang |
 | **Status** | 🔵 First meeting being scheduled |
 
