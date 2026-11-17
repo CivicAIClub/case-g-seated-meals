@@ -25,7 +25,7 @@ The person running it is a high school student on the club team or Mr. Gibbs him
 - The repo is public. Build and test with made-up people only. Never put a real student's or faculty member's name, email, table or any other detail in code, tests, fixtures, docs, commit messages or PR text. Club members' names as the team, in the README and the Cursor rule, are fine. Practice emails end in @example.org.
 - You never see the real data and never ask for it. The real run happens in Google Sheets, in the school's Google account, by a person.
 - No AI, no model calls, no network, no new dependencies. Plain JavaScript in Apps Script; plain Node for tests and scripts.
-- The program never writes to the tabs people fill in (Students, Faculty, Past event). Only Make practice data writes those, and only into an otherwise empty spreadsheet.
+- The program never writes to the tabs people fill in (Students, Faculty, Faculty list, Past event). Only Make practice data writes those, and only into an otherwise empty spreadsheet.
 - The tabs that get shared with the whole school (SM By first name, SM By form, SM By table, SM Faculty) never show gender, boarding or day, dorm, advisory, sport, email or any rule detail: only names, form, table, role and guests.
 - No sheet links, spreadsheet IDs or school email addresses anywhere in the repo.
 - Don't merge, don't push to main, and don't edit .github/CODEOWNERS.
@@ -42,6 +42,22 @@ You can't open these and don't need to. These are the facts the tool is built on
 - Names are the only key in his files and they drift: preferred names, misspellings, first and last swapped. The tool uses school email as the ID.
 - None of his files has gender, advisory, dorm, boarding or day, sport, or a new-student flag. Those will come from a list export (below).
 - What he sends out: a Google Sheet with tabs for students by first name, students by form, students by table, and faculty. In 2026 he added one tab per form with three-column print pages.
+
+# The student export (Mr. Sheehan's file)
+
+Mr. Gibbs and Mr. Sheehan built the student data as a Google Sheet that updates itself every hour. You can't open it and don't need to; this is its shape, from counts only (fall 2026):
+
+- One tab. Row 1 holds these headers, exactly as written (note the typo "TeanName"): FirstName | Nickname | LastName | Email | YOG | SchoolYear | TeamSeason | TeanName | AdvisorGroup | Gender | BoardingDay
+- One row per student per season roster. In fall 2026 there are 347 rows, one per student, all with SchoolYear "2026 - 2027" and TeamSeason "Fall". When winter and spring rosters are added, each student gets more rows. Mr. Sheehan's advice: use only the current season's rows.
+- Email: every student has a school email, all different. It's the ID.
+- Nickname is never blank. For 126 students it differs from FirstName; it's the name people know them by.
+- YOG (year of graduation): 2027 to 2030, about 60 to 100 students each. With SchoolYear "2026 - 2027", 2027 is the seniors, 2028 juniors, 2029 sophomores, 2030 freshmen.
+- Gender: mostly Female and Male, with a few other values or blanks.
+- BoardingDay: B or D, about 86 percent B.
+- AdvisorGroup: 51 advisories, a one-to-four-word label each. Sizes 4 to 11 students: most have 6 or 7, eight have 10 or 11.
+- TeanName: 21 fall teams and afternoon activities, 2 to 28 students each. Most are named "Sport - level" (for example "Soccer - <level>"); some are one name ("Yearbook", "Theater (F)").
+- There is no dorm column.
+- To use it, a person downloads it (File > Download > CSV) and imports it into the working spreadsheet as a tab named Students, or copies the tab in. The tool reads whatever is there each time.
 
 # What he asked for (Nov 9 meeting)
 
@@ -61,8 +77,9 @@ You can't open these and don't need to. These are the facts the tool is built on
 # The workbook
 
 Tabs people fill in (the program never writes them):
-- Students: the list export, one row per student.
-- Faculty: one row per adult who might attend, usually the responses of a per-event faculty Google Form.
+- Students: Mr. Sheehan's student export, one row per student per season.
+- Faculty: the responses of the event's faculty Google Form.
+- Faculty list (optional): Mr. Gibbs's list of all faculty.
 - Past event (optional): a past seating list pasted in, for Add a past event to history.
 
 Setup tabs (created once with defaults by any menu item, then edited by people, never overwritten):
@@ -88,54 +105,51 @@ Every write goes through helpers in Main.gs, and each helper throws on any other
 
 # Reading the tabs
 
-Find every column by a keyword in its header, never by column letter, because exports change. To match: collapse runs of spaces and line breaks to one space and ignore case. A header that equals the keyword wins; otherwise look for the keyword inside the header. Keywords live in Event (rows named "Column: <tab> <name>"), so a renamed header needs no code change. A required keyword that matches no header, or more than one when none equals it, stops the menu item with a message naming the keyword, the tab and the headers it matched. An optional keyword that matches more than one header is treated the same way. Skip rows that are entirely blank. Turn every cell into text with String() and trim it. Read each tab with one getValues.
+Find every column by a keyword in its header, never by column letter, because exports change. To match: collapse runs of spaces and line breaks to one space and ignore case. A header that equals the keyword wins; otherwise look for the keyword inside the header. A keyword can list alternatives separated by "|" (for example "TeamName|TeanName"); the first alternative that matches wins. Keywords live in Event (rows named "Column: <tab> <name>"), so a renamed header needs no code change. A required keyword that matches no header, or more than one when none equals it, stops the menu item with a message naming the keyword, the tab and the headers it matched. An optional keyword that matches more than one header is treated the same way. Skip rows that are entirely blank. Turn every cell into text with String() and trim it. Read each tab with one getValues.
 
-Students columns (keyword defaults; * = required):
-- Email* (keyword "Email"): the ID.
-- First name* ("First name"), Last name* ("Last name"), Preferred name ("Preferred"): the name shown everywhere is the preferred name if there is one, else the first name, then the last name.
-- Form* ("Form"): any text (it might read "Senior", "VI Form", "12" or "2027"). Each distinct value is a form. The order forms are listed in comes from Event "Form order" (comma-separated); values not listed there come after, sorted.
-- Gender ("Gender"), Boarding or day ("Boarding"), Dorm ("Dorm"), Advisory ("Advisory"), Sport ("Sport"), New student ("New student"): all optional. A missing optional column turns off any rule that needs it, and SM Check says "Not checked: no <column> column".
-A student row with no email is still seated, with the ID "row:<row number>", and listed in SM Needs you ("No email, so history can't follow this student"). Two rows with the same email: keep the first, list the second in SM Needs you.
+Students columns (keyword defaults, matching the real export; * = required):
+- Email* ("Email"): the ID.
+- First name* ("FirstName|First name"), Nickname ("Nickname|Preferred"), Last name* ("LastName|Last name"): the name shown everywhere is the nickname if there is one, else the first name, then the last name.
+- Form* ("YOG|Form|Grade"): the class year, or any text. When the values are four-digit years and a SchoolYear column reads like "2026 - 2027", the tool names them: the end year is Senior, then Junior, Sophomore and Freshman. Otherwise each distinct value is a form as written. Event "Form names" (like "2027=Senior, 2028=Junior") overrides the names. Forms are listed seniors first; other values come after, sorted.
+- School year ("SchoolYear") and Season ("TeamSeason"): optional. When both are there, keep only the current season's rows: Event "Season" if set (for example "Winter 2026 - 2027"), otherwise the latest SchoolYear and, within it, the latest of Fall, Winter and Spring present. The finish message says which season was used and how many rows were set aside.
+- Sport ("TeamName|TeanName|Sport"), Advisory ("AdvisorGroup|Advisory"), Gender ("Gender"), Boarding or day ("BoardingDay|Boarding"), Dorm ("Dorm"), New student ("New student"): all optional. BoardingDay values B and D mean Boarding and Day. A missing optional column turns off any rule that needs it, and SM Check says "Not checked: no <column> column".
+A student row with no email is still seated, with the ID "row:<row number>", and listed in SM Needs you ("No email, so history can't follow this student"). Two rows with the same email in the current season: keep the first, list the second in SM Needs you.
 
-Faculty columns:
-- Name* ("Your name"), Email ("Email Address", the column Google Forms adds when it collects emails).
-- Attending ("attend"): blank or anything starting with Y means yes; anything starting with N means not coming.
-- Guests ("How many guests"): a whole number of extra seats (a spouse who doesn't work here, a child). Blank is 0.
-- Guest names ("Guest names"): shown on SM By table.
-- Household ("spouse or partner"): the name or email of a spouse or partner who also works here. When either of two faculty names the other, they sit at the same table as one unit.
-- Sit with ("sit with"): up to three names or emails of other faculty, separated by commas.
-- New ("new to Pomfret"): Yes means new this year. Mentor ("new colleague"): Yes means happy to sit with a new colleague.
-- Group ("advisory or team"): for the Together sort below, the value of the grouping column this adult belongs with (their advisory, the team they coach).
-Names in Household and Sit with are matched to the Faculty tab like Past event names below (email first, then name words). An entry naming nobody, or more than one person, goes in SM Needs you.
+Faculty come from two tabs, joined by email:
+- Faculty: the responses tab of the Candlelight faculty Google Form (already built in the school account; its questions are below). One row per answer.
+- Faculty list (optional): a list of all faculty that Mr. Gibbs is putting together. At least Name and Email; any other columns are kept. A column matching "Group|Advisory|AdvisorGroup" says which advisory or team that adult belongs with, for the Together sort.
+With a Faculty list, everyone on it who didn't answer the form is handled by Event "Faculty who didn't answer": "Don't seat" (default; they're listed in SM Needs you so someone can ask them) or "Seat" (seated with no requests). Someone who answered but isn't on the list is still seated, and listed in SM Needs you.
 
-The faculty Google Form uses these question titles, so the default keywords match. The README lists them under "Suggested faculty form questions":
-1. Your name
-2. Will you attend this seated meal? (Yes / No)
-3. How many guests will you bring? (a spouse or partner who doesn't work at Pomfret, a child; 0 if none)
-4. Guest names
-5. If your spouse or partner also works at Pomfret, what's their name?
-6. Who would you like to sit with? Up to three colleagues, separated by commas.
-7. Are you new to Pomfret this year? (Yes / No)
-8. Would you be happy to sit with a new colleague? (Yes / No)
-9. If this dinner is seated by advisory or team, which advisory or team should you sit with?
-The form also collects email addresses (Settings > Responses > Collect email addresses), which adds the Email Address column.
+The form's questions, exactly as they appear in the responses tab, and what the tool reads from each (keyword defaults):
+1. Email Address: added by the form (it collects verified school emails). Keyword "Email Address|Email".
+2. "Your name" (required). Keyword "Your name".
+3. "Will you attend this seated meal?" Yes or No (required). Keyword "attend". Blank or anything starting with Y means coming; anything starting with N means not. People who answer No skip the rest of the form.
+4. "Will a spouse, partner or child join you? If so, who?" Free text: names. Keyword "spouse, partner or child". Split it into names on commas, "and", "&" and line breaks. A name that matches another faculty member (by email, then by name words, as under Add a past event to history below) makes the two a household: they sit at the same table as one unit and take no guest seat. Any other names are shown on SM By table as their guests.
+5. "How many seats should we save for your guests?" 0 to 4. Keyword "seats should we save". This is the number of extra seats at their table. Blank means 0, or the number of non-faculty names in question 4 if that's larger (and that case goes in SM Needs you).
+6. "Up to three colleagues you'd enjoy sitting with". Free text. Keyword "enjoy sitting with". Split like question 4 and match each name to the faculty; unknown or ambiguous names go in SM Needs you.
+7. "Are you new to Pomfret this year, or would you be glad to sit with a colleague who is?" Keyword "new to Pomfret". The answer "I'm new to Pomfret this year" marks them New; "I'd be glad to sit with a new colleague" marks them a Mentor; "Neither" or blank, neither.
+The form allows editing after submitting and one answer per person; if two rows share an email anyway, keep the later one (by Timestamp) and say so in SM Needs you.
+
+The README lists these questions under "The faculty form", with a line on making a copy of the form for each new event.
 
 # Event settings (Event tab defaults)
 
 - Event name: Candlelight
 - Date: 2026-12-15
 - Sort: Mixed (Mixed or Together)
-- Together by: Advisory (the Students column to group by when Sort is Together)
+- Together by: Advisory (the Students column to group by when Sort is Together: Advisory, Sport, Form, Boarding or day, or any header in the Students tab)
 - Seats per table: 10 (a Tables row's Seats overrides it)
 - Adults per table: 2
 - Waiters per table: 1
 - Assistants per table: 1
 - Waiter forms: All (or a comma-separated list of forms who can wait)
 - Assistant forms: All
-- Form order: Senior, Junior, Sophomore, Freshman
+- Form names: blank (the names come from YOG and SchoolYear as described above)
+- Season: blank (the latest season in the Students tab)
+- Faculty who didn't answer: Don't seat
 - Seed: 1 (change it to get a different arrangement under the same rules)
-- Column: <tab> <name> rows for every keyword above (for example "Column: Students First name" with the value "First name").
-A missing or unreadable value falls back to its default, with a warning in the finish message. Words people type (Yes, No, Mixed, Together, All, form names) are read ignoring case and spaces at the ends.
+- Column: <tab> <name> rows for every keyword above (for example "Column: Students Sport" with the value "TeamName|TeanName|Sport").
+A missing or unreadable value falls back to its default, with a warning in the finish message. Words people type (Yes, No, Mixed, Together, All, Seat, Don't seat, form names) are read ignoring case and spaces at the ends.
 
 # Tables (Tables tab defaults)
 
@@ -164,12 +178,12 @@ If SM Seating exists, first ask: "This replaces SM Seating and the shared tabs, 
 
 Ties are always broken with a fixed shuffle: FNV-1a of the Seed and the person's ID (the same idea as case-f-project-pomfret's tie order). Never the alphabet, never Math.random.
 
-1. Who's coming. Students on the Students tab minus Not attending (matched by email, or by name when the email is blank). Faculty with Attending not No. Units: a household is one unit; each adult's guests travel with them.
+1. Who's coming. Students in the current season minus Not attending (matched by email, or by name when the email is blank). Faculty who answered Yes (and, with "Faculty who didn't answer" set to Seat, those on the Faculty list who didn't answer). Units: a household is one unit; each adult's guest seats travel with them.
 2. Locked seats first. A lock to a table not in use, or one that overfills a table, goes in SM Needs you and is skipped.
-3. Faculty. Spread adult units so each table gets close to Adults per table adults, filling tables evenly. In order: households, then new faculty each with a mentor at their table, then Sit with requests (seat requested pairs together when a table has room and no other adult rule breaks), then everyone else in shuffle order. With rule 9 on, prefer a table other than the one they had last event. Fewer adults than tables: tables without an adult are listed in SM Check.
+3. Faculty. Spread adult units so each table gets close to Adults per table adults, filling tables evenly. In order: households, then new faculty each with a mentor at their table, then the colleagues they'd enjoy sitting with (seat requested pairs together when a table has room and no other adult rule breaks), then everyone else in shuffle order. With rule 9 on, prefer a table other than the one they had last event. Fewer adults than tables: tables without an adult are listed in SM Check.
 4. Seats left for students at each table = its Seats minus its adults and guests. Spread students so every table's total is as even as possible (the most and least full tables differ by at most one person, unless locks or seats force otherwise).
 5. Students, Mixed sort. Deal each form in Form order, students within a form in shuffle order, each to the table with the fewest students of that form, ties to the table with the most seats left, then by a rotating start table set by the Seed (so table 1 isn't always first).
-6. Students, Together sort. Group students by the Together by column (blank values form their own group, "No <column>"). Faculty whose Group matches sit with that group. Groups larger than one table are split into as few tables as possible, and the tables are consecutive neighbors in one row, walking rows A to E. Then the remaining groups fill the remaining seats largest first, each kept whole when it fits (first fit, by room order). A group that has to split across rows goes in SM Check.
+6. Students, Together sort. Group students by the Together by column (blank values form their own group, "No <column>"). Faculty whose group on the Faculty list matches a group's value sit with that group (an advisor with their advisory). Groups larger than one table are split into as few tables as possible, and the tables are consecutive neighbors in one row, walking rows A to E. Then the remaining groups fill the remaining seats largest first, each kept whole when it fits (first fit, by room order). A group that has to split across rows goes in SM Check.
 7. Better seats. Repeat until a round changes nothing, at most 100 rounds: try swapping two students at different tables (and moving a student to a table with a free seat). Keep a change only if it makes the rule results better by rank: compare the number of violations of the highest-ranked rule that's on; only if that's equal, the next; and so on. Never break a hard limit, never move a locked student. Go through students in shuffle order so the result is the same every run.
 8. Waiters. At each table, pick Waiters per table students from the forms in Waiter forms, then Assistants per table from Assistant forms (a student has one role at most). Pick the student who has waited the fewest times this school year (Waiter history from August 1 on, both roles counted), then one who didn't wait at the last event, then shuffle order. A table with no eligible student gets no waiter and goes in SM Check. Rule 4 checks that every table has at least one student with any waiting in Waiter history (in the waiter role or not); when it fails, step 7's swaps try to fix it first, so run step 8 again after any swap round that touched it.
 9. Write every SM tab and add the SM Run log row. Finish with: "Seated N students and F faculty at T tables. C rules not fully met. Read SM Check, then SM Needs you. When it looks right, share the four shared tabs."
@@ -188,7 +202,7 @@ Adds 1 to the Seed in Event, then runs Sort (with the same two questions). This 
 - SM By form: students by form in Form order, then by last name: Form | Last | First | Table | Role, with a bold row at the start of each form.
 - SM Faculty: adults sorted by last name: Name | Table | Guests.
 - SM Check: Rule | Result (Pass, Warning, Fail, Not checked) | Details (the exact tables and people). One row per hard limit, then one per rule in rank order, then: waiters per form this event and this year (so he can see fairness at a glance), tables without a waiter, and anything Sort couldn't do.
-- SM Needs you: rows that need a person, by section: data problems (no email, duplicate email, unknown Sit with or Household names), lock problems, people Sort couldn't seat, tables without an adult.
+- SM Needs you: rows that need a person, by section: data problems (no email, duplicate email, unknown or ambiguous names in the faculty answers, faculty who didn't answer), lock problems, people Sort couldn't seat, tables without an adult.
 - SM Run log: Time | Who and why | Event | Date | Sort | Seed | Rules as used (short text) | Students | Faculty | Tables | Rules not fully met.
 
 Bold every header row and freeze it. Text that starts with =, +, - or @ is written with a leading apostrophe.
@@ -207,9 +221,13 @@ So the tool knows who waited and who sat together before it existed. A person pa
 
 # Make practice data
 
-Writes made-up Students, Faculty and Not attending tabs into an otherwise empty spreadsheet (its own helper; it refuses if Students or Faculty has data), plus the setup tabs with defaults. Seeded (for example mulberry32 with a fixed seed), so it's identical every time; the Node tests use the same generator. Obviously invented names ("Avery Testwood"), emails at @example.org. About 350 students across the four forms (about 88 each), 92 faculty, the default 46 tables in use.
+Writes made-up Students, Faculty, Faculty list and Not attending tabs into an otherwise empty spreadsheet (its own helper; it refuses if Students or Faculty has any data), plus the setup tabs with defaults. Seeded (for example mulberry32 with a fixed seed), so it's identical every time; the Node tests use the same generator. Obviously invented names ("Avery Testwood"), emails at @example.org.
 
-Plant on purpose: about 25 students in Not attending; preferred names; a student with no email; a duplicate email; a form value not in Form order; gender M and F with a few other values and blanks; about 30 percent day students and the rest in 12 dorms; 44 advisories of 7 to 9 students, each with a faculty Group; 20 sports, including one team larger than two tables; 3 couples (Household); 4 faculty bringing 1 or 2 guests; 4 new faculty and 6 mentors; Sit with requests including three people who all name each other and one naming someone not on the list; 8 faculty not attending. Also a Past event tab and history for two made-up past dinners in which some names drift (a preferred name, a misspelled last name, first and last swapped, one student who matches nobody), so the importer and the repeat rules have something to work on.
+Students use the real export's layout exactly: the same eleven headers, typo included, in the same order. About 350 students with YOG 2027 to 2030 in about the real proportions, SchoolYear "2026 - 2027", a Fall row for everyone, plus Winter rows for about 40 students (so the season filter has something to drop, and the tests can switch the current season). Nickname always filled, different from FirstName for about a third. Gender mostly Female and Male, with a few other values and blanks. BoardingDay B for about 86 percent, D for the rest. 51 advisories with one-to-four-word made-up labels, 4 to 11 students each (most 6 or 7). 21 made-up teams and activities of 2 to 28 students, most named "Sport - level", a few one name. No Dorm column.
+
+Faculty is the form's responses tab with its real headers (Timestamp, Email Address, then the six questions as worded above). Faculty list has Name, Email and AdvisorGroup for 92 adults, matching the student advisories. The default 46 tables are in use.
+
+Plant on purpose: about 25 students in Not attending; a student with no email; a duplicate email in the current season; 8 faculty answering No; 6 on the Faculty list who never answered; 3 couples who name each other in question 4; 4 faculty with 1 or 2 guest seats and guest names, one whose names outnumber their seats; 4 new faculty and 6 mentors; colleague requests including three people who all name each other and one naming someone not on the list; a faculty member who answered twice. Also a Past event tab and history for two made-up past dinners in which some names drift (a nickname, a misspelled last name, first and last swapped, one student who matches nobody), so the importer and the repeat rules have something to work on.
 
 Don't tune the generator to force outcomes. Cases that need special numbers (fewer adults than tables, a table with no eligible waiter, a lock to a full table) get small fixtures of their own in the tests.
 
@@ -243,7 +261,7 @@ Plain-English comments in every file: what each function does and why. The team 
 
 # Tests
 
-- read: keywords on messy headers; a missing required keyword stops and names it; optional columns missing turn rules off; preferred names; no email; duplicate email; unknown form value ordering; Attending, Guests and Household parsing; words read ignoring case.
+- read: keywords on messy headers and "|" alternatives (TeamName or TeanName); a missing required keyword stops and names it; optional columns missing turn rules off; the season filter (latest season by default, Event Season when set, the count set aside); YOG named Senior to Freshman from SchoolYear, and Form names overriding; nicknames; no email; duplicate email; the faculty form's answers (attend, names split on commas and "and", seats, new and mentor); households found from names in question 4; a faculty member who answered twice; Faculty list joined by email and the didn't-answer setting; words read ignoring case.
 - seat: everyone attending seated exactly once; no table over its Seats; table totals within one of each other; locks honored and bad locks reported; households and guests together; a new faculty member seated with a mentor; Mixed meets rules 1 and 2 on the practice data (every table with at least 3 forms, at most 3 from one form), matching his 2026 baseline; Together keeps groups whole when they fit and puts a split group at neighboring tables in one row; rule ranking (a swap that helps rule 3 but breaks rule 1 is refused); rule 3 and rule 8 reduce repeats against seeded history compared with the same sort with those rules off; the same input and Seed twice gives identical seating; a different Seed gives a different seating; Sort on the practice data runs in under 5 seconds.
 - waiters: one waiter and one assistant per table by default; nobody gets both; Waiter forms respected; fewest times waited goes first; nobody who waited at the last event is picked when someone else can be; never the alphabet (on practice data, waiters' last initials are spread across the alphabet); a table with no eligible student is reported; rule 4 fixed by a swap when possible.
 - history: the importer matches by email, preferred name, legal name, swapped order and initial; refuses two candidates; lists the closest candidates for an unmatched row; Save to history twice asks before replacing.
@@ -266,11 +284,11 @@ Do them in order. After each: npm test passes, commit with a plain-English messa
 7. Save this event to history and Add a past event to history. Tests. (Milestones 1 to 7 are the Candlelight version.)
 8. The Together sort (step 6) with neighboring tables. Tests.
 9. scripts/build-apps-script.cjs, scripts/demo.cjs, the e2e, safety and bundle tests. Run npm run demo and read SM Check and SM By table as Mr. Gibbs would: fix anything that looks wrong.
-10. README: fill in the top table (client, developers as in milestone 1, status), The problem, Goal, Stack (Google Sheets and Apps Script; no AI, no network), How it works (one short paragraph per menu item and per rule), Suggested faculty form questions, Running it (below), Student data, Repository layout and Definition of done. Then the Done checklist, then the pull request.
+10. README: fill in the top table (client, developers as in milestone 1, status), The problem, Goal, Stack (Google Sheets and Apps Script; no AI, no network), How it works (one short paragraph per menu item and per rule), The faculty form, Running it (below), Student data, Repository layout and Definition of done. Then the Done checklist, then the pull request.
 
 README "Running it" has two parts.
 Practice run, in a scratch spreadsheet: create a blank Google Sheet; Extensions > Apps Script; delete what's in Code.gs and paste the whole of paste-into-apps-script/SeatedMeals.gs; save; reload the spreadsheet; Seated Meals > Make practice data (the first run asks for permission: Review permissions, pick your account, Advanced, Go to the project (unsafe), Allow; it's your own script); then Add a past event to history, Sort, and what to look at after each.
-Real run: make the working spreadsheet in the school account; copy in the student export as a tab named Students and the faculty responses as a tab named Faculty; set Event (name, date, sort, waiter forms) and Tables (which tables are set); list absences in Not attending; paste the script the same way; add the last two dinners with Add a past event to history; Sort; read SM Check and SM Needs you; edit SM Seating by hand if needed and run Check again; share only the four shared tabs (File > Make a copy of just those tabs, or move the rest to a private copy); after the dinner, Save this event to history. Never edit the original export; to get help from someone outside the school, describe the problem with made-up names.
+Real run: make the working spreadsheet in the school account; download Mr. Sheehan's student file as CSV and import it as a tab named Students (or copy the tab in); copy in the faculty form's responses as a tab named Faculty, and Mr. Gibbs's faculty list as Faculty list if there is one; set Event (name, date, sort, waiter forms) and Tables (which tables are set); list absences in Not attending; paste the script the same way; add the last two dinners with Add a past event to history; Sort; read SM Check and SM Needs you; edit SM Seating by hand if needed and run Check again; share only the four shared tabs (File > Make a copy of just those tabs, or move the rest to a private copy); after the dinner, Save this event to history. Never edit the original export; to get help from someone outside the school, describe the problem with made-up names.
 
 Definition of done (Phase 1), for the README: the tool seats the real Candlelight lists in the working spreadsheet; SM Check passes, or every failure has a one-sentence explanation for Mr. Gibbs; waiters are picked fairly with history recorded; npm test passes in CI, including the safety test; Mr. Gibbs has the lists to review by December 8, 2026.
 
