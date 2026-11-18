@@ -660,7 +660,7 @@ var SMSeat = (function () {
       if (rule.status !== 'active') { row(title, 'Not checked', rule.reason); return; }
       var issues = ruleIssues(ctx, board, rule, byTable, rows);
       if (issues.length) rulesNotMet++;
-      row(title, issues.length ? 'Warning' : 'Pass', issues.length ? issues.join('; ') + '.' : 'Met at every table.');
+      row(title, issues.length ? 'Warning' : 'Pass', issues.length ? issues.join('; ') + '.' : rule.id === 'neighbors' ? 'Every split group sits at neighboring tables in one row.' : 'Met at every table.');
     });
 
     // Waiters: per form at this event and this year, and tables without one.
