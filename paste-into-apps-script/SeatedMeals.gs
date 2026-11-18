@@ -200,16 +200,37 @@ var SMRead = (function () {
     var name = words.join(' ').replace(/^[\s,.:;!-]+|[\s,.:;!-]+$/g, '');
     return { name: onlyFiller ? '' : name, relation: relation };
   }
+  // Splits a question 4 answer like splitNames, and notes which pieces came right after a bare
+  // comma: in "My husband, John" the comma joins a label to a name rather than adding a person.
+  function splitPieces(v) {
+    var parts = text(v).split(/(\s*(?:,|;|&|\+|\r?\n|\band\b)\s*)/i), pieces = [], sep = '';
+    for (var i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) { sep += parts[i]; continue; } // the separators are at the odd places
+      if (text(parts[i]) === '') continue;
+      pieces.push({ text: text(parts[i]), afterComma: pieces.length > 0 && /^\s*,\s*$/.test(sep) });
+      sep = '';
+    }
+    return pieces;
+  }
   // Question 4, cleaned. names: the typed names left after cleaning. mentioned: the answer said
-  // someone is coming, even with no name ("Yes", "My wife"). unnamed: how many pieces named
-  // someone only by who they are, used when question 5 is blank.
+  // someone is coming, even with no name ("Yes", "My wife"). unnamed: how many people it mentions
+  // only by who they are ("and my son"); each needs a seat like a named guest. A piece like
+  // "My husband" joined to a name by just a comma ("My husband, John" or "John, my husband")
+  // labels that name instead of adding a person, unless the name already says who it is
+  // ("My wife Sarah, my son" is two people).
   function guestAnswer(v) {
     if (meansNobody(v)) return { names: [], mentioned: false, unnamed: 0 };
-    var rest = text(v).replace(/^\s*yes\b[\s,.:;!-]*/i, ''), names = [], unnamed = 0;
-    splitNames(rest).forEach(function (piece) {
-      var c = cleanGuest(piece);
-      if (c.name) names.push(c.name);
-      else if (c.relation) unnamed++;
+    var rest = text(v).replace(/^\s*yes\b[\s,.:;!-]*/i, '');
+    var pieces = splitPieces(rest).map(function (p) { var c = cleanGuest(p.text); c.afterComma = p.afterComma; return c; });
+    var names = [], unnamed = 0, labeled = {};
+    // A name piece can take one label when it has no relation words of its own.
+    function canLabel(k) { var p = pieces[k]; return !!(p && p.name && !p.relation && !labeled[k]); }
+    pieces.forEach(function (p, k) {
+      if (p.name) { names.push(p.name); return; }
+      if (!p.relation) return;
+      if (p.afterComma && canLabel(k - 1)) labeled[k - 1] = true;
+      else if (pieces[k + 1] && pieces[k + 1].afterComma && canLabel(k + 1)) labeled[k + 1] = true;
+      else unnamed++;
     });
     return { names: names, mentioned: true, unnamed: unnamed };
   }
@@ -751,23 +772,26 @@ var SMRead = (function () {
       if (p.householdIds.indexOf(q.id) < 0) p.householdIds.push(q.id);
     }
     // How many guest seats to hold, and the SM Needs you rows when questions 4 and 5 disagree.
-    // Never fewer seats than guest names: an empty seat is a smaller problem than a guest without one.
+    // Never fewer seats than the guests the answer names or mentions ("and my son"): an empty seat
+    // is a smaller problem than a guest without one.
     function guestSeatCount(p, q4, asked, facultyNamed) {
-      var named = p.guestNames.length, list = named ? ' (' + p.guestNames.join(', ') + ')' : '';
+      var named = p.guestNames.length, guests = named + q4.unnamed, list = named ? ' (' + p.guestNames.join(', ') + ')' : '';
       var said = 'Said someone is joining ("' + text(p.answer.guests) + '")';
+      // The problem starts with the names when they are the whole count, else with the answer.
+      var told = q4.unnamed || !named ? said : 'Named ' + plural(named, 'guest');
       if (!isNaN(asked)) {
         var seats = Math.max(0, asked - facultyNamed);
-        if (named > seats) {
-          need(p, 'Named ' + plural(named, 'guest') + ' but asked for ' + plural(seats, 'seat') + '. Held ' + plural(named, 'seat') + list + '.');
-          return named;
+        if (guests > seats) {
+          need(p, told + ' but asked for ' + plural(seats, 'seat') + '. Held ' + plural(guests, 'seat') + list + '.');
+          return guests;
         }
         if (seats === 0 && q4.mentioned && !facultyNamed) need(p, said + ' but asked for 0 seats, so none was held.');
         return seats;
       }
-      // Question 5 left blank: a seat per guest name, or per "my wife"-style mention, and at least
-      // one when the answer says someone is coming.
-      var held = Math.max(named, q4.unnamed, q4.mentioned && !facultyNamed ? 1 : 0);
-      if (held > 0) need(p, (named ? 'Named ' + plural(named, 'guest') : said) + ' but didn\'t say how many seats. Held ' + plural(held, 'seat') + list + '.');
+      // Question 5 left blank: a seat for each guest named or mentioned, and at least one when the
+      // answer says someone is coming.
+      var held = Math.max(guests, q4.mentioned && !facultyNamed ? 1 : 0);
+      if (held > 0) need(p, told + ' but didn\'t say how many seats. Held ' + plural(held, 'seat') + list + '.');
       return held;
     }
 

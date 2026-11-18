@@ -59,6 +59,20 @@ test('someone mentioned with no name or seat count still gets a seat, and SM Nee
   assert.match(needsFor(model, 'Zed Zero')[0], /asked for 0 seats, so none was held/);
 });
 
+test('a guest mentioned only as "my son" gets a seat on top of the named guests (found in review)', () => {
+  const cases = [
+    ['My wife Sarah and my son', '', 2], ['My wife Sarah, my son', '', 2], ['Sarah & our daughter', '', 2],
+    ['My husband, John', '', 1], ['John, my husband', '', 1], ['Sarah, my wife, and Leo, my son', '', 2],
+    ['My wife and son', '', 2], ['My wife Sarah and my son', 1, 2], ['My wife Sarah and my son', 2, 2]
+  ];
+  for (const [typed, seats, held] of cases) {
+    assert.equal(read([answer('Eve Epsilon', { guests: typed, seats })]).adults[0].guestSeats, held, typed + ' with seats ' + JSON.stringify(seats));
+  }
+  const model = read([answer('Eve Epsilon', { guests: 'My wife Sarah and my son', seats: 1 })]);
+  assert.deepEqual(needsFor(model, 'Eve Epsilon'), ['Said someone is joining ("My wife Sarah and my son") but asked for 1 seat. Held 2 seats (Sarah).']);
+  assert.deepEqual([...read([answer('Eve Epsilon', { guests: 'Sarah, my wife, and Leo, my son', seats: 2 })]).adults[0].guestNames], ['Sarah', 'Leo']);
+});
+
 test('more names than seats holds a seat per name, and SM Needs you lists the names', () => {
   const model = read([answer('Dana Pilotlane', { guests: 'Pat Visitor, Lee Visitor & Kim Visitor', seats: 1 })]);
   assert.equal(model.adults[0].guestSeats, 3);
