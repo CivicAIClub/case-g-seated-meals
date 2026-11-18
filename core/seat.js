@@ -89,7 +89,7 @@ var SMSeat = (function () {
     ctx.units = []; ctx.unitOf = {}; ctx.unitById = {};
     ctx.adults.slice().sort(byKey).forEach(function (a) {
       var root = find(a.id), u = unitByRoot[root];
-      if (!u) { u = unitByRoot[root] = { id: 'unit:' + a.id, key: a.key, members: [], guests: [], wants: {}, table: null, locked: false, why: '' }; ctx.units.push(u); ctx.unitById[u.id] = u; }
+      if (!u) { u = unitByRoot[root] = { id: 'unit:' + a.id, key: a.key, members: [], guests: [], wants: {}, asked: {}, sameName: {}, table: null, locked: false, why: '' }; ctx.units.push(u); ctx.unitById[u.id] = u; }
       u.members.push(a);
       ctx.unitOf[a.id] = u;
     });
@@ -109,8 +109,10 @@ var SMSeat = (function () {
         var u = ctx.unitOf[a.id], v = ctx.unitOf[id];
         if (!v || u === v) return;
         u.wants[v.id] = true; v.wants[u.id] = true;
+        u.asked[v.id] = true; v.asked[u.id] = true;
       });
     });
+    pairSameLastNames(ctx);
     ctx.totalMembers = ctx.adults.length;
 
     // Rules: which are in force for this event, in rank order.
@@ -149,6 +151,30 @@ var SMSeat = (function () {
       ctx.locks.push({ row: L.row, person: p, table: num, why: L.why });
     });
     return ctx;
+  }
+
+  // Faculty who are both coming and share a last name, but didn't name each other, are asked to
+  // sit together the way a colleague request works: together when a table has room, not a hard
+  // limit. Mr. Gibbs always seats same-surname faculty together.
+  function pairSameLastNames(ctx) {
+    var byLast = {}, order = [];
+    ctx.adults.forEach(function (a) {
+      var k = SMRead.nameKey(a.last);
+      if (!k) return;
+      if (!byLast[k]) { byLast[k] = []; order.push(k); }
+      byLast[k].push(a);
+    });
+    order.forEach(function (k) {
+      var list = byLast[k];
+      for (var i = 0; i < list.length; i++) {
+        for (var j = i + 1; j < list.length; j++) {
+          var u = ctx.unitOf[list[i].id], v = ctx.unitOf[list[j].id];
+          if (u === v) continue;
+          u.wants[v.id] = true; v.wants[u.id] = true;
+          u.sameName[v.id] = true; v.sameName[u.id] = true;
+        }
+      }
+    });
   }
 
   // ---------- The board: who sits where, with running counts for the rules ----------
@@ -315,18 +341,21 @@ var SMSeat = (function () {
     pending.filter(function (u) { return u.table === null; }).forEach(function (u) { seat(u, 'Spread across tables'); });
 
     // A table left without an adult takes one from a table with two or more, when someone can move.
+    // Someone sitting with a colleague they asked for (or share a last name with) moves last.
     ctx.tables.forEach(function (tb) {
       if (board.t[tb.num].adults > 0) return;
       var donor = units.filter(function (u) {
         return u.table !== null && !u.locked && !u.isNew && !u.isMentor && board.t[u.table].adults - u.members.length >= 1 && board.room(tb.num) >= u.seats;
-      }).sort(byKey)[0];
+      }).sort(function (a, b) { return friendsAt(a, a.table) - friendsAt(b, b.table) || byKey(a, b); })[0];
       if (donor) { board.removeUnit(donor); board.addUnit(donor, tb.num); }
     });
     // Why lines for colleagues who ended up together.
     units.forEach(function (u) {
       if (u.table === null || u.why !== 'Spread across tables') return;
-      var with_ = Object.keys(u.wants).map(function (id) { return ctx.unitById[id]; }).filter(function (v) { return v.table === u.table; });
-      if (with_.length) u.why = 'Asked to sit with ' + with_.map(function (v) { return v.name; }).join(', ');
+      var here = Object.keys(u.wants).map(function (id) { return ctx.unitById[id]; }).filter(function (v) { return v.table === u.table; });
+      var asked = here.filter(function (v) { return u.asked[v.id]; }), same = here.filter(function (v) { return !u.asked[v.id] && u.sameName[v.id]; });
+      if (asked.length) u.why = 'Asked to sit with ' + asked.map(function (v) { return v.name; }).join(', ');
+      else if (same.length) u.why = 'Same last name as ' + same.map(function (v) { return v.name; }).join(', ');
     });
   }
 
