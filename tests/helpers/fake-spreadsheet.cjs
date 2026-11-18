@@ -1,7 +1,8 @@
 'use strict';
 // A small stand-in for Google Sheets, adapted from case-f-project-pomfret's helper. It keeps only
 // what Main.gs uses. Like Sheets, setValues turns typed text into numbers and dates, and a leading
-// apostrophe keeps text as text (the apostrophe itself is not stored).
+// apostrophe keeps text as text (the apostrophe itself is not stored). Like Sheets, a new tab has
+// 1,000 rows and 26 columns, and a range past them throws until rows or columns are inserted.
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -53,19 +54,42 @@ class RangeList {
   setFontWeight(w) { this.ranges.forEach(r => r.setFontWeight(w)); return this; }
 }
 class Sheet {
-  constructor(name, data = []) { Object.assign(this, { name, data: data.map(r => r.slice()), bold: new Set(), raw: new Map(), frozen: 0, writes: 0 }); }
+  constructor(name, data = []) {
+    Object.assign(this, { name, data: data.map(r => r.slice()), bold: new Set(), raw: new Map(), frozen: 0, writes: 0 });
+    this.maxRows = Math.max(1000, this.data.length);
+    this.maxCols = Math.max(26, ...this.data.map(r => (r || []).length));
+  }
   getName() { return this.name; }
+  getMaxRows() { return this.maxRows; }
+  getMaxColumns() { return this.maxCols; }
+  insertRowsAfter(after, n) {
+    if (after < this.data.length) this.data.splice(after, 0, ...Array.from({ length: n }, () => []));
+    this.maxRows += n;
+    return this;
+  }
+  insertColumnsAfter(after, n) {
+    this.data.forEach(r => { if (r && r.length > after) r.splice(after, 0, ...Array(n).fill(undefined)); });
+    this.maxCols += n;
+    return this;
+  }
+  // Real Sheets refuses a range outside the tab's rows and columns.
+  checkRange(row, col, rows, cols) {
+    if (row < 1 || col < 1) throw new Error('The starting row or column of the range is too small.');
+    if (row + rows - 1 > this.maxRows || col + cols - 1 > this.maxCols) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+  }
   getLastRow() {
     for (let i = this.data.length; i > 0; i--) if ((this.data[i - 1] || []).some(v => v !== '' && v !== undefined)) return i;
     return 0;
   }
   getLastColumn() { return Math.max(0, ...this.data.map(r => (r || []).length)); }
   getDataRange() { return new Range(this, 1, 1, Math.max(1, this.getLastRow()), Math.max(1, this.getLastColumn())); }
-  getRange(row, col, rows = 1, cols = 1) { return new Range(this, row, col, rows, cols); }
+  getRange(row, col, rows = 1, cols = 1) { this.checkRange(row, col, rows, cols); return new Range(this, row, col, rows, cols); }
   getRangeList(a1s) {
     return new RangeList(a1s.map(a1 => {
       const [, c1, r1, c2, r2] = a1.match(/^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/);
-      return new Range(this, Number(r1), column(c1), Number(r2 || r1) - Number(r1) + 1, column(c2 || c1) - column(c1) + 1);
+      const row = Number(r1), col = column(c1), rows = Number(r2 || r1) - row + 1, cols = column(c2 || c1) - col + 1;
+      this.checkRange(row, col, rows, cols);
+      return new Range(this, row, col, rows, cols);
     }));
   }
   clearContents() { this.data = []; this.raw.clear(); return this; }
