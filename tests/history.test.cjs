@@ -50,9 +50,12 @@ test('the importer refuses a name that matches two students', () => {
 test('an unmatched row lists the closest candidates, and nothing is added for it', () => {
   const res = match([['Casey Mokstone', 3], ['Nobody Here', 4], ['Blake Samplefield', 'x']]);
   assert.equal(res.matched.length, 0);
-  assert.match(res.needs[0].problem, /Matches nobody\. Closest: Casey Mockstone/);
-  assert.match(res.needs[0].problem, /Type the right email into this row/);
+  assert.match(res.needs[0].problem, /Matches nobody in Students or the faculty\. Closest: Casey Mockstone/);
+  assert.match(res.needs[0].problem, /If they're still at the school, type their email into this row and run Add a past event to history again\. If they graduated or left, ignore this row\.$/);
   assert.match(res.needs[1].problem, /Matches nobody/);
+  assert.match(res.needs[2].problem, /Type the right email into this row/, 'a bad table number is not a graduate');
+  assert.equal(res.unmatched, 2);
+  assert.equal(res.problems, 1);
   assert.match(res.needs[2].problem, /Table "x" is not a table number/);
 });
 
@@ -109,10 +112,10 @@ test('Add a past event to history matches the pasted list, lists the rest, and a
   const before = b.sheet('Seating history').getLastRow();
   b.ui.answers.push({ text: 'Practice dinner B' }, { text: '2026-11-10' });
   b.context.SM_addPastEvent();
-  assert.match(b.ui.lastMessage(), /^Matched \d+ of \d+ rows and added them to history as Practice dinner B on 2026-11-10\. 2 rows need a person/);
+  assert.match(b.ui.lastMessage(), /^Matched \d+ of \d+ rows and added them to history as Practice dinner B on 2026-11-10\. 2 rows matched nobody \(listed in SM Needs you\)\. That is expected for people who graduated or left\./);
   const needs = b.sheet('SM Needs you').rows().map(r => r.join(' | ')).join('\n');
   assert.match(needs, /Quinn Nobodyhere/);
-  assert.match(needs, /Matches nobody\. Closest:/);
+  assert.match(needs, /Matches nobody in Students or the faculty\. Closest:/);
   const added = b.sheet('Seating history').getLastRow() - before;
   assert.ok(added > 400);
   b.ui.answers.push({ text: 'Practice dinner B' }, { text: '11/10/2026' }, 'YES');

@@ -77,23 +77,24 @@ var SMHistory = (function () {
     // Plain copies, made once per import, so matchName can keep its name keys on them.
     return {
       students: students.map(function (s) { return { kind: 'Student', id: s.id, email: s.email, name: s.name, shownFirst: s.shownFirst, legalFirst: s.legalFirst, last: s.last }; }),
-      adults: adults.map(function (a) { return { kind: 'Faculty', id: a.id, email: a.email, name: a.name, shownFirst: a.shownFirst, legalFirst: a.legalFirst, last: a.last }; })
+      adults: adults.map(function (a) { return { kind: 'Faculty', id: a.id, email: a.email, name: a.name, shownFirst: a.shownFirst, legalFirst: a.legalFirst, last: a.last, otherNames: a.otherNames || [] }; })
     };
   }
   function describe(p) { return p.name + (p.email ? ' (' + p.email + ')' : ''); }
 
   // Matches each Past event row to a student (then a faculty member): by email when there is one,
   // otherwise by name. Rows that match nobody, or more than one person, go to needs with the
-  // closest candidates, and nothing is added for them.
+  // closest candidates, and nothing is added for them. A row that matches nobody is often someone
+  // who has graduated or left, so its advice says so; unmatched counts those rows.
   function matchPastEvent(past, students, adults) {
-    var people = matchable(students, adults), byEmail = {}, matched = [], needs = [], seen = {};
+    var people = matchable(students, adults), byEmail = {}, matched = [], needs = [], seen = {}, unmatched = 0;
     people.students.concat(people.adults).forEach(function (p) { if (p.email && !byEmail[p.email.toLowerCase()]) byEmail[p.email.toLowerCase()] = p; });
     past.forEach(function (r) {
-      var p = null, problem = '';
+      var p = null, problem = '', nobody = false;
       if (isNaN(r.table)) problem = 'Table "' + r.tableText + '" is not a table number.';
       else if (r.email) {
         p = byEmail[r.email.toLowerCase()] || null;
-        if (!p) problem = 'Nobody in Students or the faculty has the email ' + r.email + '.';
+        if (!p) { nobody = true; problem = 'Nobody in Students or the faculty has the email ' + r.email + '.'; }
       } else {
         var m = SMRead.matchName(r.name, people.students);
         if (!m.match && !m.ambiguous.length) {
@@ -103,17 +104,20 @@ var SMHistory = (function () {
         }
         p = m.match;
         if (m.ambiguous.length) problem = 'Matches more than one person: ' + m.ambiguous.map(describe).join('; ') + '.';
-        else if (!p) problem = 'Matches nobody.' + (m.closest.length ? ' Closest: ' + m.closest.map(describe).join('; ') + '.' : '');
+        else if (!p) { nobody = true; problem = 'Matches nobody in Students or the faculty.' + (m.closest.length ? ' Closest: ' + m.closest.map(describe).join('; ') + '.' : ''); }
       }
       if (p && seen[p.id]) { problem = 'Same person as Past event row ' + seen[p.id] + ' (' + p.name + '); only that row was used.'; p = null; }
       if (!p) {
-        needs.push({ section: 'Past event', name: r.name, email: r.email, problem: 'Past event row ' + r.row + ': ' + problem + ' Type the right email into this row and run Add a past event to history again.' });
+        var advice = nobody ? ' If they\'re still at the school, type their email into this row and run Add a past event to history again. If they graduated or left, ignore this row.'
+          : ' Type the right email into this row and run Add a past event to history again.';
+        if (nobody) unmatched++;
+        needs.push({ section: 'Past event', name: r.name, email: r.email, problem: 'Past event row ' + r.row + ': ' + problem + advice });
         return;
       }
       seen[p.id] = r.row;
       matched.push({ kind: p.kind, id: p.id, email: p.email, name: p.name, table: r.table, role: p.kind === 'Student' ? r.role : '' });
     });
-    return { matched: matched, needs: needs };
+    return { matched: matched, needs: needs, unmatched: unmatched, problems: needs.length - unmatched };
   }
 
   // History rows for the matched rows of a past event.
