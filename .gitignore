@@ -5,14 +5,9 @@
 *.key
 *.pem
 
-# Common build / dependency output (trim once the stack is chosen)
+# Node and the demo's output (npm run demo writes CSVs here)
 node_modules/
-dist/
-build/
-__pycache__/
-*.py[cod]
-.venv/
-venv/
+demo-output/
 
 # Editors / AI tools
 .vscode/settings.json
