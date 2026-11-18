@@ -58,7 +58,11 @@ var SMRead = (function () {
     ['Faculty list', 'Name', 'Name', true],
     ['Faculty list', 'Email', 'Email', true],
     ['Faculty list', 'Group', 'Group|Advisory|AdvisorGroup', false],
-    ['Past event', 'Name', 'Name', true],
+    // The past event's name is one Name column, or first and last name columns joined. readPastEvent
+    // finds these three itself ('manual'), because "First Name" and "Last Name" both contain "Name".
+    ['Past event', 'Name', 'Name', false, 'manual'],
+    ['Past event', 'First name', 'First|First name|FirstName', false, 'manual'],
+    ['Past event', 'Last name', 'Last|Last name|LastName', false, 'manual'],
     ['Past event', 'Table', 'Table', true],
     ['Past event', 'Email', 'Email', false],
     ['Past event', 'Role', 'Role|Waiter', false],
@@ -342,11 +346,21 @@ var SMRead = (function () {
   function columnsOf(tab, values, ev, headerRow) {
     var headers = ((values && values[headerRow || 0]) || []).map(text), idx = {};
     COLUMNS.forEach(function (c) {
-      if (c[0] !== tab) return;
-      var kw = (CONFIGURABLE[tab] && ev && ev.columns[tab + ' ' + c[1]]) || c[2];
-      idx[c[1]] = findColumn(headers, kw, c[3], tab, c[1]);
+      if (c[0] !== tab || c[4] === 'manual') return;
+      idx[c[1]] = findColumn(headers, keywordFor(c, ev), c[3], tab, c[1]);
     });
     return { headers: headers, idx: idx };
+  }
+  // A column's keyword: the "Column: <tab> <name>" row in Event when there is one, else the default.
+  function keywordFor(c, ev) { return (CONFIGURABLE[c[0]] && ev && ev.columns[c[0] + ' ' + c[1]]) || c[2]; }
+  function columnDef(tab, label) { return COLUMNS.filter(function (c) { return c[0] === tab && c[1] === label; })[0]; }
+  // The first header that is exactly one of a keyword's alternatives, or -1.
+  function exactColumn(headers, keyword) {
+    var alts = String(keyword).split('|').map(norm);
+    for (var a = 0; a < alts.length; a++) {
+      for (var i = 0; i < headers.length; i++) if (alts[a] !== '' && norm(headers[i]) === alts[a]) return i;
+    }
+    return -1;
   }
   // The non-blank rows below the header, each with its spreadsheet row number.
   function dataRows(values, headerRow) {
@@ -814,18 +828,41 @@ var SMRead = (function () {
       return { row: r.row, event: get('Event'), date: dateKey(r.cells[idx.Date]), email: get('Email'), id: get('Email').toLowerCase(), name: get('Name'), role: get('Role') };
     });
   }
-  // A Role or Waiter cell read as Waiter, Assistant or ''.
+  // A Role or Waiter cell read as Waiter, Assistant or ''. Assistant is checked first, because
+  // "Asst. Waiter" contains "waiter". His files mark them W and AW.
   function roleOf(v) {
-    var n = norm(v);
-    if (n.indexOf('assist') >= 0) return 'Assistant';
-    if (n.indexOf('waiter') >= 0 || /^(y|yes|w|x)$/.test(n)) return 'Waiter';
+    var n = norm(v).replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (n === '') return '';
+    if (/\bassist/.test(n) || /\basst\b/.test(n) || n === 'a' || n === 'aw') return 'Assistant';
+    if (n.indexOf('waiter') >= 0 || /^(w|y|yes|x)$/.test(n)) return 'Waiter';
     return '';
   }
-  // The Past event tab: one pasted seating list. Guest rows are skipped.
+  // A Table cell read as a table number and anything after it: "12", "12 W", "Table 12".
+  function tableCell(v) {
+    var m = text(v).match(/^(?:table\s*)?(\d+)(?:\.0+)?\s*(.*)$/i);
+    return m ? { table: +m[1], rest: text(m[2]) } : { table: NaN, rest: '' };
+  }
+  // Where the Past event's names are: a column that is exactly the Name keyword; else first and
+  // last name columns, joined; else the Name keyword as usual (which stops with a message naming
+  // the headers when it can't find one column).
+  function pastNameColumns(headers, ev) {
+    var nameKw = keywordFor(columnDef('Past event', 'Name'), ev), exact = exactColumn(headers, nameKw);
+    if (exact >= 0) return { name: exact };
+    var first = findColumn(headers, keywordFor(columnDef('Past event', 'First name'), ev), false, 'Past event', 'First name');
+    var last = findColumn(headers, keywordFor(columnDef('Past event', 'Last name'), ev), false, 'Past event', 'Last name');
+    if (first >= 0 && last >= 0 && first !== last) return { first: first, last: last };
+    return { name: findColumn(headers, nameKw, true, 'Past event', 'Name') };
+  }
+  // The Past event tab: one pasted seating list, one row per person. Guest rows are skipped. A
+  // class year written after a name ("Testwood, Avery '27") is dropped.
   function readPastEvent(values, ev) {
-    if (!values || values.length < 2) throw new Error('The Past event tab is missing or empty. Paste one past seating list into a tab named Past event, with at least a Name and a Table column.');
-    return readSimple('Past event', values, ev, function (r, get) {
-      return { row: r.row, name: get('Name'), table: wholeNumber(get('Table')), tableText: get('Table'), email: get('Email'), role: roleOf(get('Role')) };
+    if (!values || values.length < 2) throw new Error('The Past event tab is missing or empty. Paste one past seating list into a tab named Past event, with a Name column (or first and last name columns) and a Table column.');
+    var c = columnsOf('Past event', values, ev), names = pastNameColumns(c.headers, ev);
+    return dataRows(values).map(function (r) {
+      var name = names.name !== undefined ? cellText(r, names.name) : text(cellText(r, names.first) + ' ' + cellText(r, names.last));
+      var cell = tableCell(cellText(r, c.idx.Table));
+      return { row: r.row, name: name.replace(/\s*['‘’]\d{2}$/, ''), table: cell.table, tableText: cellText(r, c.idx.Table), email: cellText(r, c.idx.Email),
+        role: roleOf(cellText(r, c.idx.Role)) || roleOf(cell.rest) };
     }).filter(function (r) { return r.name !== '' && !/^guest\b/i.test(r.name); });
   }
   // SM Seating: a note on row 1, headers below it. The header row is the first with Table and Name.

@@ -62,7 +62,11 @@ var SMRead = (function () {
     ['Faculty list', 'Name', 'Name', true],
     ['Faculty list', 'Email', 'Email', true],
     ['Faculty list', 'Group', 'Group|Advisory|AdvisorGroup', false],
-    ['Past event', 'Name', 'Name', true],
+    // The past event's name is one Name column, or first and last name columns joined. readPastEvent
+    // finds these three itself ('manual'), because "First Name" and "Last Name" both contain "Name".
+    ['Past event', 'Name', 'Name', false, 'manual'],
+    ['Past event', 'First name', 'First|First name|FirstName', false, 'manual'],
+    ['Past event', 'Last name', 'Last|Last name|LastName', false, 'manual'],
     ['Past event', 'Table', 'Table', true],
     ['Past event', 'Email', 'Email', false],
     ['Past event', 'Role', 'Role|Waiter', false],
@@ -346,11 +350,21 @@ var SMRead = (function () {
   function columnsOf(tab, values, ev, headerRow) {
     var headers = ((values && values[headerRow || 0]) || []).map(text), idx = {};
     COLUMNS.forEach(function (c) {
-      if (c[0] !== tab) return;
-      var kw = (CONFIGURABLE[tab] && ev && ev.columns[tab + ' ' + c[1]]) || c[2];
-      idx[c[1]] = findColumn(headers, kw, c[3], tab, c[1]);
+      if (c[0] !== tab || c[4] === 'manual') return;
+      idx[c[1]] = findColumn(headers, keywordFor(c, ev), c[3], tab, c[1]);
     });
     return { headers: headers, idx: idx };
+  }
+  // A column's keyword: the "Column: <tab> <name>" row in Event when there is one, else the default.
+  function keywordFor(c, ev) { return (CONFIGURABLE[c[0]] && ev && ev.columns[c[0] + ' ' + c[1]]) || c[2]; }
+  function columnDef(tab, label) { return COLUMNS.filter(function (c) { return c[0] === tab && c[1] === label; })[0]; }
+  // The first header that is exactly one of a keyword's alternatives, or -1.
+  function exactColumn(headers, keyword) {
+    var alts = String(keyword).split('|').map(norm);
+    for (var a = 0; a < alts.length; a++) {
+      for (var i = 0; i < headers.length; i++) if (alts[a] !== '' && norm(headers[i]) === alts[a]) return i;
+    }
+    return -1;
   }
   // The non-blank rows below the header, each with its spreadsheet row number.
   function dataRows(values, headerRow) {
@@ -818,18 +832,41 @@ var SMRead = (function () {
       return { row: r.row, event: get('Event'), date: dateKey(r.cells[idx.Date]), email: get('Email'), id: get('Email').toLowerCase(), name: get('Name'), role: get('Role') };
     });
   }
-  // A Role or Waiter cell read as Waiter, Assistant or ''.
+  // A Role or Waiter cell read as Waiter, Assistant or ''. Assistant is checked first, because
+  // "Asst. Waiter" contains "waiter". His files mark them W and AW.
   function roleOf(v) {
-    var n = norm(v);
-    if (n.indexOf('assist') >= 0) return 'Assistant';
-    if (n.indexOf('waiter') >= 0 || /^(y|yes|w|x)$/.test(n)) return 'Waiter';
+    var n = norm(v).replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (n === '') return '';
+    if (/\bassist/.test(n) || /\basst\b/.test(n) || n === 'a' || n === 'aw') return 'Assistant';
+    if (n.indexOf('waiter') >= 0 || /^(w|y|yes|x)$/.test(n)) return 'Waiter';
     return '';
   }
-  // The Past event tab: one pasted seating list. Guest rows are skipped.
+  // A Table cell read as a table number and anything after it: "12", "12 W", "Table 12".
+  function tableCell(v) {
+    var m = text(v).match(/^(?:table\s*)?(\d+)(?:\.0+)?\s*(.*)$/i);
+    return m ? { table: +m[1], rest: text(m[2]) } : { table: NaN, rest: '' };
+  }
+  // Where the Past event's names are: a column that is exactly the Name keyword; else first and
+  // last name columns, joined; else the Name keyword as usual (which stops with a message naming
+  // the headers when it can't find one column).
+  function pastNameColumns(headers, ev) {
+    var nameKw = keywordFor(columnDef('Past event', 'Name'), ev), exact = exactColumn(headers, nameKw);
+    if (exact >= 0) return { name: exact };
+    var first = findColumn(headers, keywordFor(columnDef('Past event', 'First name'), ev), false, 'Past event', 'First name');
+    var last = findColumn(headers, keywordFor(columnDef('Past event', 'Last name'), ev), false, 'Past event', 'Last name');
+    if (first >= 0 && last >= 0 && first !== last) return { first: first, last: last };
+    return { name: findColumn(headers, nameKw, true, 'Past event', 'Name') };
+  }
+  // The Past event tab: one pasted seating list, one row per person. Guest rows are skipped. A
+  // class year written after a name ("Testwood, Avery '27") is dropped.
   function readPastEvent(values, ev) {
-    if (!values || values.length < 2) throw new Error('The Past event tab is missing or empty. Paste one past seating list into a tab named Past event, with at least a Name and a Table column.');
-    return readSimple('Past event', values, ev, function (r, get) {
-      return { row: r.row, name: get('Name'), table: wholeNumber(get('Table')), tableText: get('Table'), email: get('Email'), role: roleOf(get('Role')) };
+    if (!values || values.length < 2) throw new Error('The Past event tab is missing or empty. Paste one past seating list into a tab named Past event, with a Name column (or first and last name columns) and a Table column.');
+    var c = columnsOf('Past event', values, ev), names = pastNameColumns(c.headers, ev);
+    return dataRows(values).map(function (r) {
+      var name = names.name !== undefined ? cellText(r, names.name) : text(cellText(r, names.first) + ' ' + cellText(r, names.last));
+      var cell = tableCell(cellText(r, c.idx.Table));
+      return { row: r.row, name: name.replace(/\s*['‘’]\d{2}$/, ''), table: cell.table, tableText: cellText(r, c.idx.Table), email: cellText(r, c.idx.Email),
+        role: roleOf(cellText(r, c.idx.Role)) || roleOf(cell.rest) };
     }).filter(function (r) { return r.name !== '' && !/^guest\b/i.test(r.name); });
   }
   // SM Seating: a note on row 1, headers below it. The header row is the first with Table and Name.
@@ -962,23 +999,24 @@ var SMHistory = (function () {
     // Plain copies, made once per import, so matchName can keep its name keys on them.
     return {
       students: students.map(function (s) { return { kind: 'Student', id: s.id, email: s.email, name: s.name, shownFirst: s.shownFirst, legalFirst: s.legalFirst, last: s.last }; }),
-      adults: adults.map(function (a) { return { kind: 'Faculty', id: a.id, email: a.email, name: a.name, shownFirst: a.shownFirst, legalFirst: a.legalFirst, last: a.last }; })
+      adults: adults.map(function (a) { return { kind: 'Faculty', id: a.id, email: a.email, name: a.name, shownFirst: a.shownFirst, legalFirst: a.legalFirst, last: a.last, otherNames: a.otherNames || [] }; })
     };
   }
   function describe(p) { return p.name + (p.email ? ' (' + p.email + ')' : ''); }
 
   // Matches each Past event row to a student (then a faculty member): by email when there is one,
   // otherwise by name. Rows that match nobody, or more than one person, go to needs with the
-  // closest candidates, and nothing is added for them.
+  // closest candidates, and nothing is added for them. A row that matches nobody is often someone
+  // who has graduated or left, so its advice says so; unmatched counts those rows.
   function matchPastEvent(past, students, adults) {
-    var people = matchable(students, adults), byEmail = {}, matched = [], needs = [], seen = {};
+    var people = matchable(students, adults), byEmail = {}, matched = [], needs = [], seen = {}, unmatched = 0;
     people.students.concat(people.adults).forEach(function (p) { if (p.email && !byEmail[p.email.toLowerCase()]) byEmail[p.email.toLowerCase()] = p; });
     past.forEach(function (r) {
-      var p = null, problem = '';
+      var p = null, problem = '', nobody = false;
       if (isNaN(r.table)) problem = 'Table "' + r.tableText + '" is not a table number.';
       else if (r.email) {
         p = byEmail[r.email.toLowerCase()] || null;
-        if (!p) problem = 'Nobody in Students or the faculty has the email ' + r.email + '.';
+        if (!p) { nobody = true; problem = 'Nobody in Students or the faculty has the email ' + r.email + '.'; }
       } else {
         var m = SMRead.matchName(r.name, people.students);
         if (!m.match && !m.ambiguous.length) {
@@ -988,17 +1026,20 @@ var SMHistory = (function () {
         }
         p = m.match;
         if (m.ambiguous.length) problem = 'Matches more than one person: ' + m.ambiguous.map(describe).join('; ') + '.';
-        else if (!p) problem = 'Matches nobody.' + (m.closest.length ? ' Closest: ' + m.closest.map(describe).join('; ') + '.' : '');
+        else if (!p) { nobody = true; problem = 'Matches nobody in Students or the faculty.' + (m.closest.length ? ' Closest: ' + m.closest.map(describe).join('; ') + '.' : ''); }
       }
       if (p && seen[p.id]) { problem = 'Same person as Past event row ' + seen[p.id] + ' (' + p.name + '); only that row was used.'; p = null; }
       if (!p) {
-        needs.push({ section: 'Past event', name: r.name, email: r.email, problem: 'Past event row ' + r.row + ': ' + problem + ' Type the right email into this row and run Add a past event to history again.' });
+        var advice = nobody ? ' If they\'re still at the school, type their email into this row and run Add a past event to history again. If they graduated or left, ignore this row.'
+          : ' Type the right email into this row and run Add a past event to history again.';
+        if (nobody) unmatched++;
+        needs.push({ section: 'Past event', name: r.name, email: r.email, problem: 'Past event row ' + r.row + ': ' + problem + advice });
         return;
       }
       seen[p.id] = r.row;
       matched.push({ kind: p.kind, id: p.id, email: p.email, name: p.name, table: r.table, role: p.kind === 'Student' ? r.role : '' });
     });
-    return { matched: matched, needs: needs };
+    return { matched: matched, needs: needs, unmatched: unmatched, problems: needs.length - unmatched };
   }
 
   // History rows for the matched rows of a past event.
@@ -1978,13 +2019,26 @@ var SMOutput = (function () {
   function checkMessage(result) {
     return 'Checked: ' + result.check.failures + ' failures, ' + result.check.warnings + ' warnings. Read SM Check.';
   }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  // The finish message for Add a past event to history. Rows that matched nobody are counted on
+  // their own, because people who graduated or left are expected there.
+  function pastEventMessage(res, total, name, date) {
+    var lines = ['Matched ' + res.matched.length + ' of ' + total + ' rows and added them to history as ' + name + ' on ' + date + '.'];
+    if (res.unmatched) {
+      lines.push(plural(res.unmatched, 'row') + ' matched nobody (listed in SM Needs you). That is expected for people who graduated or left. ' +
+        'For anyone still at the school, type their email into their Past event row and run this again (it asks before replacing).');
+    }
+    if (res.problems) lines.push(plural(res.problems, 'row') + (res.problems === 1 ? ' needs' : ' need') + ' a person: see SM Needs you. Type the right email into those Past event rows and run this again (it asks before replacing).');
+    if (!res.unmatched && !res.problems) lines.push('Every row matched.');
+    return lines.join(' ');
+  }
 
   return {
     SEATING_NOTE: SEATING_NOTE, SEATING_HEADERS: SEATING_HEADERS, SHARED_HEADERS: SHARED_HEADERS, CHECK_HEADERS: CHECK_HEADERS, NEEDS_HEADERS: NEEDS_HEADERS,
     RUN_LOG_HEADERS: RUN_LOG_HEADERS, TAB_ORDER: TAB_ORDER,
     safeCell: safeCell, grid: grid, columnLetter: columnLetter, allTabs: allTabs, seatingTab: seatingTab, byTableTab: byTableTab,
     byFirstTab: byFirstTab, byFormTab: byFormTab, facultyTab: facultyTab, checkTab: checkTab, needsTab: needsTab,
-    runLogRow: runLogRow, sortMessage: sortMessage, checkMessage: checkMessage
+    runLogRow: runLogRow, sortMessage: sortMessage, checkMessage: checkMessage, pastEventMessage: pastEventMessage
   };
 }());
 
@@ -2367,7 +2421,7 @@ function smSaveToHistory_() {
 function smAddPastEvent_() {
   smEnsureSetup_();
   var tabs = smReadTabs_();
-  if (!tabs['Past event']) throw new Error('There is no Past event tab. Paste one past seating list into a tab named Past event, with at least a Name and a Table column.');
+  if (!tabs['Past event']) throw new Error('There is no Past event tab. Paste one past seating list into a tab named Past event, with a Name column (or first and last name columns) and a Table column.');
   var name = smPrompt_('Add a past event to history', 'What was the event called? (for example: Candlelight 2025)');
   if (name === null || name === '') return 'Nothing added. Run it again and type the event\'s name.';
   var dateText = smPrompt_('Add a past event to history', 'What was its date? (YYYY-MM-DD, for example 2025-12-16)');
@@ -2381,8 +2435,7 @@ function smAddPastEvent_() {
   if (rows.seats.length) appendRows_('Seating history', rows.seats);
   if (rows.waiters.length) appendRows_('Waiter history', rows.waiters);
   writeTab_('SM Needs you', SMOutput.needsTab(res.needs));
-  return 'Matched ' + res.matched.length + ' of ' + past.length + ' rows and added them to history as ' + name + ' on ' + date + '. ' +
-    (res.needs.length ? res.needs.length + ' rows need a person: see SM Needs you. Type the right email into those Past event rows and run this again (it asks before replacing).' : 'Every row matched.');
+  return SMOutput.pastEventMessage(res, past.length, name, date);
 }
 
 // ---------- Practice data ----------

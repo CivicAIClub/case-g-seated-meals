@@ -143,7 +143,7 @@ function smSaveToHistory_() {
 function smAddPastEvent_() {
   smEnsureSetup_();
   var tabs = smReadTabs_();
-  if (!tabs['Past event']) throw new Error('There is no Past event tab. Paste one past seating list into a tab named Past event, with at least a Name and a Table column.');
+  if (!tabs['Past event']) throw new Error('There is no Past event tab. Paste one past seating list into a tab named Past event, with a Name column (or first and last name columns) and a Table column.');
   var name = smPrompt_('Add a past event to history', 'What was the event called? (for example: Candlelight 2025)');
   if (name === null || name === '') return 'Nothing added. Run it again and type the event\'s name.';
   var dateText = smPrompt_('Add a past event to history', 'What was its date? (YYYY-MM-DD, for example 2025-12-16)');
@@ -157,8 +157,7 @@ function smAddPastEvent_() {
   if (rows.seats.length) appendRows_('Seating history', rows.seats);
   if (rows.waiters.length) appendRows_('Waiter history', rows.waiters);
   writeTab_('SM Needs you', SMOutput.needsTab(res.needs));
-  return 'Matched ' + res.matched.length + ' of ' + past.length + ' rows and added them to history as ' + name + ' on ' + date + '. ' +
-    (res.needs.length ? res.needs.length + ' rows need a person: see SM Needs you. Type the right email into those Past event rows and run this again (it asks before replacing).' : 'Every row matched.');
+  return SMOutput.pastEventMessage(res, past.length, name, date);
 }
 
 // ---------- Practice data ----------
