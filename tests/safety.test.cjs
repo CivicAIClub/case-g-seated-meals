@@ -13,7 +13,7 @@ const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 const CORE = fs.readdirSync(path.join(root, 'core')).filter(f => f.endsWith('.js')).map(f => 'core/' + f);
 const GS = fs.readdirSync(path.join(root, 'apps-script')).filter(f => f.endsWith('.gs')).map(f => 'apps-script/' + f);
 const PASTE = 'paste-into-apps-script/SeatedMeals.gs';
-const WRITE_HELPERS = ['writeTab_', 'createTabOnce_', 'appendRows_', 'rewriteHistory_', 'setEventValue_', 'writePracticeTabs_'];
+const WRITE_HELPERS = ['writeTab_', 'createTabOnce_', 'appendRows_', 'rewriteHistory_', 'setEventValue_', 'writePracticeTabs_', 'makeRoom_'];
 const MAIN_START = 'Seated Meals: the Google Sheets side.';
 
 // Blanks out comments but keeps strings, regex literals and line numbers, so findings name the
@@ -65,7 +65,7 @@ const BANNED = [
   [/\bMath\.random\b/, 'Math.random'], [/\bDate\.now\b/, 'Date.now'], [/\binstanceof\s+Date\b/, 'instanceof Date'],
   [/\bTODO\b|\bFIXME\b/, 'a TODO or FIXME']
 ];
-const WRITES = /\.(setValues?|appendRow|clear|clearContents|clearFormats|deleteRows?|insertSheet|deleteSheet)\(/;
+const WRITES = /\.(setValues?|appendRow|clear|clearContents|clearFormats|deleteRows?|deleteColumns?|insertSheet|deleteSheet|insertRows(?:After|Before)?|insertColumns(?:After|Before)?)\(/;
 
 test('the Apps Script code uses no network, mail, Drive, Docs, Forms, globals or newer JavaScript', () => {
   const all = [];

@@ -178,6 +178,14 @@ function smMakePracticeData_() {
 
 // ---------- Write helpers (the only code that writes) ----------
 
+// Real Google Sheets tabs have a fixed size (1,000 rows and 26 columns when new), and a write past
+// it stops with an error. Adds rows or columns at the end first when a write needs them.
+function makeRoom_(s, lastRow, lastColumn) {
+  var rows = s.getMaxRows(), cols = s.getMaxColumns();
+  if (lastRow > rows) s.insertRowsAfter(rows, lastRow - rows);
+  if (lastColumn > cols) s.insertColumnsAfter(cols, lastColumn - cols);
+}
+
 // Rewrites one SM tab (never SM Run log): clears values and formats, writes the rows in one
 // setValues, bolds the header and any section rows, and freezes the header.
 function writeTab_(name, tab) {
@@ -186,7 +194,10 @@ function writeTab_(name, tab) {
   var grid = SMOutput.grid(tab.rows);
   s.clearContents();
   s.clearFormats();
-  if (grid.length) s.getRange(1, 1, grid.length, grid[0].length).setValues(grid);
+  if (grid.length) {
+    makeRoom_(s, grid.length, grid[0].length);
+    s.getRange(1, 1, grid.length, grid[0].length).setValues(grid);
+  }
   var bold = (tab.bold || []).map(function (r) { return 'A' + r + ':' + SMOutput.columnLetter(grid[0].length) + r; });
   if (bold.length) s.getRangeList(bold).setFontWeight('bold');
   s.setFrozenRows(tab.freeze || 1);
@@ -198,6 +209,7 @@ function createTabOnce_(name, rows) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (ss.getSheetByName(name)) return false;
   var s = ss.insertSheet(name), grid = SMOutput.grid(rows);
+  makeRoom_(s, grid.length, grid[0].length);
   s.getRange(1, 1, grid.length, grid[0].length).setValues(grid);
   s.getRangeList(['A1:' + SMOutput.columnLetter(grid[0].length) + '1']).setFontWeight('bold');
   s.setFrozenRows(1);
@@ -211,13 +223,15 @@ function appendRows_(name, rows) {
   if (!s) {
     s = ss.insertSheet(name);
     var header = name === 'SM Run log' ? SMOutput.RUN_LOG_HEADERS : SMRead.setupDefaults()[name][0];
+    makeRoom_(s, 1, header.length);
     s.getRange(1, 1, 1, header.length).setValues([header]);
     s.getRangeList(['A1:' + SMOutput.columnLetter(header.length) + '1']).setFontWeight('bold');
     s.setFrozenRows(1);
   }
   if (!rows.length) return;
-  var grid = SMOutput.grid(rows);
-  s.getRange(s.getLastRow() + 1, 1, grid.length, grid[0].length).setValues(grid);
+  var grid = SMOutput.grid(rows), start = s.getLastRow() + 1;
+  makeRoom_(s, start + grid.length - 1, grid[0].length);
+  s.getRange(start, 1, grid.length, grid[0].length).setValues(grid);
 }
 
 // Rewrites a history tab after the person agreed to replace one event's rows. This is the only
@@ -228,7 +242,10 @@ function rewriteHistory_(name, rows) {
   if (!s) throw new Error('There is no ' + name + ' tab.');
   var grid = SMOutput.grid(rows);
   s.clearContents();
-  if (grid.length) s.getRange(1, 1, grid.length, grid[0].length).setValues(grid);
+  if (grid.length) {
+    makeRoom_(s, grid.length, grid[0].length);
+    s.getRange(1, 1, grid.length, grid[0].length).setValues(grid);
+  }
 }
 
 // Sets one value in the Event tab (Seed for Sort again, Season for practice data). Adds the row if missing.
@@ -240,6 +257,7 @@ function setEventValue_(key, value) {
   for (var i = 1; i < values.length; i++) {
     if (SMRead.norm(values[i][c.idx.Key]) === SMRead.norm(key)) { s.getRange(i + 1, c.idx.Value + 1).setValue(SMOutput.safeCell(value)); return; }
   }
+  makeRoom_(s, values.length + 1, 3);
   s.getRange(values.length + 1, 1, 1, 3).setValues([[key, SMOutput.safeCell(value), '']]);
 }
 
@@ -252,6 +270,7 @@ function writePracticeTabs_(data) {
     var s = ss.getSheetByName(name) || ss.insertSheet(name), grid = SMOutput.grid(data.tabs[name]);
     s.clearContents();
     s.clearFormats();
+    makeRoom_(s, grid.length, grid[0].length);
     s.getRange(1, 1, grid.length, grid[0].length).setValues(grid);
     s.getRangeList(['A1:' + SMOutput.columnLetter(grid[0].length) + '1']).setFontWeight('bold');
     s.setFrozenRows(1);
