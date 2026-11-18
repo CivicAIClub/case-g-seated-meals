@@ -37,7 +37,7 @@ Everything is under the **Seated Meals** menu in the spreadsheet. Each menu item
 
 **Save this event to history.** After the dinner (or once the list is final), adds every seated student and faculty member to Seating history and every waiter and assistant to Waiter history, with the Event name and Date. If that event is already there, it asks before replacing it.
 
-**Add a past event to history.** So the tool knows who waited and who sat together before it existed. Paste one past seating list into a tab named Past event (at least Name and Table columns, optionally Email and Role or Waiter). It asks for the event's name and date, then matches each row to Students (then to the faculty) by email, or by name: shown first name and last name, legal first name and last name, the two in either order, then last name and first initial. Rows that match nobody or more than one person go to SM Needs you with the closest names; type the right email into those Past event rows and run it again (it asks before replacing).
+**Add a past event to history.** So the tool knows who waited and who sat together before it existed. Paste one past seating list into a tab named Past event: one row per person, with a Name column (or first and last name columns, which it joins) and a Table column, and optionally Email and Role or Waiter. Roles W and Waiter count as the waiter; AW, A, Asst and Assistant as the assistant. A table and a role in one cell ("12 W") work too. It asks for the event's name and date, then matches each row to Students (then to the faculty) by email, or by name: shown first name and last name, legal first name and last name, the two in either order, then last name and first initial. Rows that match nobody or more than one person go to SM Needs you with the closest names. Rows that match nobody are expected for people who graduated or left; for anyone still at the school, type their email into the Past event row and run it again (it asks before replacing).
 
 **Make practice data.** Fills a blank spreadsheet with an invented school (about 350 made-up students in the real export's layout, the faculty form's answers, a Faculty list, absences, and a past dinner), so anyone can try the tool. It refuses to run if Students or Faculty has any data.
 
@@ -72,9 +72,9 @@ The Candlelight faculty Google Form (already built in the school account) collec
 1. **Email Address** (added by the form).
 2. **Your name** (required).
 3. **Will you attend this seated meal?** Yes or No (required). Blank or Yes means coming. People who answer No skip the rest.
-4. **Will a spouse, partner or child join you? If so, who?** Names, split on commas, "and", "&" and line breaks. A name that matches another faculty member makes the two a household (same table, no guest seat); other names are guests.
-5. **How many seats should we save for your guests?** 0 to 4. Never fewer seats than guest names.
-6. **Up to three colleagues you'd enjoy sitting with.** Names; unknown or unclear names go to SM Needs you.
+4. **Will a spouse, partner or child join you? If so, who?** Names, split on commas, "and", "&" and line breaks. Answers that mean nobody ("No", "None", "N/A", "Just me") hold no seat, and "Yes" and words like "my wife" or "our kids" are dropped, so "Yes, my wife Sarah" is a guest named Sarah. A faculty member's name anywhere in the answer ("My husband John Smithson", or "my husband John" from Jane Smithson) makes the two a household (same table, no guest seat). A spouse on Faculty list who didn't fill in the form is seated with the person who named them; one who answered No is not seated. Other names are guests. Faculty who share a last name but didn't name each other are asked to sit together, like a colleague request.
+5. **How many seats should we save for your guests?** 0 to 4. Never fewer seats than guest names. Left blank, it holds a seat per guest named, and at least one when the answer says someone is coming; SM Needs you says when the two answers disagree.
+6. **Up to three colleagues you'd enjoy sitting with.** Names; "No preference", "Anyone" and the like ask for nobody, and unknown or unclear names go to SM Needs you. When someone is on Faculty list, the list's name is shown everywhere, and the name they typed into the form still matches.
 7. **Are you new to Pomfret this year, or would you be glad to sit with a colleague who is?** "I'm new to Pomfret this year" or "I'd be glad to sit with a new colleague" or "Neither". New faculty sit with a mentor.
 
 For each new event, make a copy of the form (File > Make a copy in Google Forms), so its answers start empty.
@@ -95,13 +95,13 @@ For each new event, make a copy of the form (File > Make a copy in Google Forms)
 
 1. Make the working spreadsheet in the school account.
 2. Download Mr. Sheehan's student file as CSV (File > Download > CSV) and import it as a tab named **Students** (or copy the tab in). Never edit the original export.
-3. Copy in the faculty form's responses as a tab named **Faculty**, and Mr. Gibbs's faculty list as **Faculty list** if there is one.
+3. Link the faculty form to the working spreadsheet, so late answers show up on their own: in the form, Responses > Link to Sheets > Select existing spreadsheet, pick the working spreadsheet, then rename the new tab to **Faculty**. If that isn't possible, copy the responses tab in as **Faculty**. Add Mr. Gibbs's faculty list as **Faculty list** if there is one.
 4. Paste the script the same way as the practice run, reload, and run any menu item once to create the setup tabs.
-5. Set **Event** (name, date, sort, waiter forms) and **Tables** (which tables are set for this dinner). List absences in **Not attending**.
-6. Add the last two dinners with **Add a past event to history**, one at a time.
-7. **Sort.** Read **SM Check** and **SM Needs you**.
+5. Set **Event** (name, date, sort, and Waiter forms and Assistant forms to the forms Mr. Gibbs picks for this dinner) and **Tables** (which tables are set for this dinner). List everyone who isn't on this dinner's list in **Not attending**.
+6. Add the last two dinners with **Add a past event to history**, one at a time. For each one, make a **Past event** tab from his file: one row per person, with a Name column (or first and last name columns), Table, and Role if the file has one. Put the faculty rows under the students. Rows for people who graduated or left won't match, and that's expected.
+7. **Sort.** The finish message names the season it used ("Students: used ..."); if the winter rosters are only partly in, set Season in Event to "Fall 2026 - 2027" and Sort again. Read **SM Check** and **SM Needs you**.
 8. Edit **SM Seating** by hand if needed, then **Check again**.
-9. Share only the four shared tabs: File > Make a copy of just those tabs, or move the rest to a private copy.
+9. Share only the four shared tabs. Google Sheets has no "copy just these tabs" item: right-click the **SM By first name** tab > Copy to > New spreadsheet, then copy the other three shared tabs into that same spreadsheet (Copy to > Existing spreadsheet), rename them, and share only that file.
 10. After the dinner, **Save this event to history**.
 
 To get help from someone outside the school, describe the problem with made-up names. Never paste real names, tables or exports anywhere else.
