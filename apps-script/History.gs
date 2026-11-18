@@ -74,6 +74,7 @@ var SMHistory = (function () {
 
   // People as matchName expects them.
   function matchable(students, adults) {
+    // Plain copies, made once per import, so matchName can keep its name keys on them.
     return {
       students: students.map(function (s) { return { kind: 'Student', id: s.id, email: s.email, name: s.name, shownFirst: s.shownFirst, legalFirst: s.legalFirst, last: s.last }; }),
       adults: adults.map(function (a) { return { kind: 'Faculty', id: a.id, email: a.email, name: a.name, shownFirst: a.shownFirst, legalFirst: a.legalFirst, last: a.last }; })
@@ -98,7 +99,7 @@ var SMHistory = (function () {
         if (!m.match && !m.ambiguous.length) {
           var f = SMRead.matchName(r.name, people.adults);
           if (f.match || f.ambiguous.length) m = f;
-          else m.closest = m.closest.concat(f.closest).slice(0, 3);
+          else m.closest = SMRead.closestNames(r.name, people.students.concat(people.adults));
         }
         p = m.match;
         if (m.ambiguous.length) problem = 'Matches more than one person: ' + m.ambiguous.map(describe).join('; ') + '.';

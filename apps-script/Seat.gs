@@ -412,8 +412,14 @@ var SMSeat = (function () {
     var total = sum(ctx.tables, function (tb) { return board.t[tb.num].used; }) + sum(groups, function (g) { return g.students.length; }) +
       sum(units.filter(function (u) { return u.table === null; }), function (u) { return u.seats; });
     var level = Math.max(1, Math.ceil(total / ctx.tables.length));
+    var freeAdults = sum(units.filter(function (u) { return u.table === null && !groups.some(function (g) { return g.units.indexOf(u) >= 0; }); }), function (u) { return u.members.length; });
+    var current = null;
+    // A table with no faculty keeps one seat for a faculty member while some are still to be
+    // seated, unless the group being placed brings its own.
+    function reserve(tb) { return board.t[tb.num].adults === 0 && freeAdults > 0 && !(current && current.units.length) ? 1 : 0; }
     // Room up to the even fill level, so every table keeps space for its share of people.
-    function roomL(tb) { var t = board.t[tb.num]; return Math.min(t.seats, level) - t.used; }
+    function roomL(tb) { var t = board.t[tb.num]; return Math.min(t.seats, level) - t.used - reserve(tb); }
+    function roomS(tb) { return board.room(tb.num) - reserve(tb); }
 
     function placeIn(g, tables, why) {
       g.units.slice().sort(function (a, b) { return b.seats - a.seats || byKey(a, b); }).forEach(function (u) {
@@ -421,22 +427,30 @@ var SMSeat = (function () {
         if (tb) { board.addUnit(u, tb.num); u.why = why; }
       });
       g.students.forEach(function (s) {
-        var tb = tables.filter(function (x) { return board.room(x.num) > 0; }).sort(function (a, b) { return roomL(b) - roomL(a) || a.num - b.num; })[0];
-        if (!tb) tb = ctx.tables.filter(function (x) { return board.room(x.num) > 0; }).sort(function (a, b) { return roomL(b) - roomL(a) || a.num - b.num; })[0];
+        var tb = tables.filter(function (x) { return roomS(x) > 0; }).sort(function (a, b) { return roomL(b) - roomL(a) || a.num - b.num; })[0];
+        if (!tb) tb = ctx.tables.filter(function (x) { return roomS(x) > 0; }).sort(function (a, b) { return roomL(b) - roomL(a) || a.num - b.num; })[0];
+        if (!tb) tb = ctx.tables.filter(function (x) { return board.room(x.num) > 0; }).sort(function (a, b) { return a.num - b.num; })[0];
         if (!tb) { couldNotSeat(ctx, s, 'No table had a free seat. Add a table or seats in the Tables tab.'); return; }
         board.person(s, tb.num, 1); s.why = why;
       });
     }
     groups.sort(function (a, b) { return b.size - a.size || a.key - b.key; }).forEach(function (g) {
       var why = label + ': ' + g.label;
-      var whole = ctx.tables.filter(function (tb) { return roomL(tb) >= g.size; })[0];
+      current = g;
+      // Whole at one table: first fit by room order, at the even fill level if possible, else up to Seats.
+      var whole = ctx.tables.filter(function (tb) { return roomL(tb) >= g.size; })[0] || ctx.tables.filter(function (tb) { return roomS(tb) >= g.size; })[0];
       if (whole) { placeIn(g, [whole], why); return; }
-      for (var k = Math.max(2, Math.ceil(g.size / level)); k <= ctx.tables.length; k++) {
-        var run = runs(ctx, k).filter(function (r) { return sum(r, roomL) >= g.size && r.every(function (tb) { return roomL(tb) > 0; }); })[0];
+      // Split over as few neighboring tables in one row as possible, walking the rows from A.
+      var maxSeats = Math.max.apply(null, ctx.tables.map(function (tb) { return tb.seats; }));
+      for (var k = Math.max(2, Math.ceil(g.size / maxSeats)); k <= ctx.tables.length; k++) {
+        var all = runs(ctx, k);
+        var run = all.filter(function (r) { return sum(r, roomL) >= g.size && r.every(function (tb) { return roomL(tb) > 0; }); })[0] ||
+          all.filter(function (r) { return sum(r, roomS) >= g.size && r.every(function (tb) { return roomS(tb) > 0; }); })[0];
         if (run) { placeIn(g, run, why); return; }
       }
       var spread = ctx.tables.filter(function (tb) { return roomL(tb) > 0; });
       placeIn(g, spread.length ? spread : ctx.tables, why);
+      current = null;
       ctx.notes.push(label + ' "' + g.label + '" could not fit at neighboring tables in one row, so it is split across rows.');
     });
     seatAdults(ctx, board, units.filter(function (u) { return u.table === null; }));
@@ -729,5 +743,5 @@ var SMSeat = (function () {
     return finish(ctx, rows, false);
   }
 
-  return { fnv: fnv, prepare: prepare, Board: Board, scoreTable: scoreTable, sort: sort, check: check, checkAgain: checkAgain, neighborsInOneRow: neighborsInOneRow };
+  return { fnv: fnv, prepare: prepare, Board: Board, scoreTable: scoreTable, improvedAt: improvedAt, sort: sort, check: check, checkAgain: checkAgain, neighborsInOneRow: neighborsInOneRow };
 }());

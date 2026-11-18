@@ -177,31 +177,44 @@ var SMRead = (function () {
   // Matches a typed name to one person. People have shownFirst, legalFirst and last. The steps, in
   // order: shown first + last, legal first + last, the two in either order (last first), then last
   // name + first initial. A step that finds exactly one person wins; a step that finds more than
-  // one stops with ambiguous; when nothing matches, closest lists the three nearest names.
+  // one stops with ambiguous (closest then lists up to three of them).
   function matchName(typed, people) {
     var w = nameWords(typed), joined = w.join(' ');
     if (!w.length) return { match: null, ambiguous: [], closest: [] };
-    function k(a, b) { return nameKey(a + ' ' + b); }
+    var tail = w.slice(1).join(' '), initial = w[0].charAt(0);
     var steps = [
-      function (p) { return k(p.shownFirst, p.last) === joined; },
-      function (p) { return k(p.legalFirst, p.last) === joined; },
-      function (p) { return w.length >= 2 && (k(p.last, p.shownFirst) === joined || k(p.last, p.legalFirst) === joined); },
-      function (p) {
-        var last = nameWords(p.last);
-        if (w.length !== last.length + 1 || w.slice(1).join(' ') !== last.join(' ')) return false;
-        var initial = w[0].charAt(0);
-        return nameKey(p.shownFirst).charAt(0) === initial || nameKey(p.legalFirst).charAt(0) === initial;
-      }
+      function (k) { return k.shown === joined; },
+      function (k) { return k.legal === joined; },
+      function (k) { return w.length >= 2 && (k.lastShown === joined || k.lastLegal === joined); },
+      function (k) { return w.length === k.lastCount + 1 && tail === k.last && (k.shownInitial === initial || k.legalInitial === initial); }
     ];
     for (var s = 0; s < steps.length; s++) {
-      var hits = people.filter(steps[s]);
+      var hits = people.filter(function (p) { return steps[s](matchKeys(p)); });
       if (hits.length === 1) return { match: hits[0], ambiguous: [], closest: [] };
       if (hits.length > 1) return { match: null, ambiguous: hits, closest: hits.slice(0, 3) };
     }
-    var scored = people.map(function (p) {
-      return { p: p, d: Math.min(distance(joined, k(p.shownFirst, p.last)), distance(joined, k(p.legalFirst, p.last))) };
-    }).sort(function (a, b) { return a.d - b.d || sortText(k(a.p.shownFirst, a.p.last), k(b.p.shownFirst, b.p.last)); });
-    return { match: null, ambiguous: [], closest: scored.slice(0, 3).map(function (x) { return x.p; }) };
+    return { match: null, ambiguous: [], closest: [] };
+  }
+  // The three people whose names are nearest to a typed name (by edit distance), to suggest when
+  // nothing matched. Slower than matchName, so only called for rows that matched nobody.
+  function closestNames(typed, people) {
+    var joined = nameKey(typed);
+    return people.map(function (p) {
+      var k = matchKeys(p);
+      return { p: p, d: Math.min(distance(joined, k.shown), distance(joined, k.legal)), key: k.shown };
+    }).sort(function (a, b) { return a.d - b.d || sortText(a.key, b.key); }).slice(0, 3).map(function (x) { return x.p; });
+  }
+  // The name forms matchName compares, worked out once per person and kept on the object, so
+  // matching hundreds of rows stays fast in Apps Script.
+  function matchKeys(p) {
+    if (p.matchKeys) return p.matchKeys;
+    var last = nameWords(p.last), shown = nameKey(p.shownFirst), legal = nameKey(p.legalFirst);
+    p.matchKeys = {
+      shown: nameKey(p.shownFirst + ' ' + p.last), legal: nameKey(p.legalFirst + ' ' + p.last),
+      lastShown: nameKey(p.last + ' ' + p.shownFirst), lastLegal: nameKey(p.last + ' ' + p.legalFirst),
+      last: last.join(' '), lastCount: last.length, shownInitial: shown.charAt(0), legalInitial: legal.charAt(0)
+    };
+    return p.matchKeys;
   }
 
   // ---------- Columns ----------
@@ -620,7 +633,10 @@ var SMRead = (function () {
         var m = findAdult(typed, p);
         if (m.match) { if (p.colleagueIds.indexOf(m.match.id) < 0) p.colleagueIds.push(m.match.id); }
         else if (m.ambiguous.length) needs.push({ section: 'Data problems', name: p.name, email: p.email, problem: 'Colleague "' + typed + '" matches more than one faculty member: ' + m.ambiguous.map(function (x) { return x.name; }).join(', ') + '.' });
-        else needs.push({ section: 'Data problems', name: p.name, email: p.email, problem: 'Colleague "' + typed + '" doesn\'t match anyone on the faculty.' + (m.closest.length ? ' Closest: ' + m.closest.map(function (x) { return x.name; }).join(', ') + '.' : '') });
+        else {
+          var near = closestNames(typed, adults.filter(function (x) { return x !== p; }));
+          needs.push({ section: 'Data problems', name: p.name, email: p.email, problem: 'Colleague "' + typed + '" doesn\'t match anyone on the faculty.' + (near.length ? ' Closest: ' + near.map(function (x) { return x.name; }).join(', ') + '.' : '') });
+        }
       });
     });
     // Households go both ways: if one names the other, both are linked.
@@ -710,7 +726,7 @@ var SMRead = (function () {
   return {
     EVENT_DEFAULTS: EVENT_DEFAULTS, COLUMNS: COLUMNS, RULE_DEFAULTS: RULE_DEFAULTS, FORM_ORDER: FORM_ORDER,
     text: text, norm: norm, isDate: isDate, dateKey: dateKey, splitNames: splitNames, wholeNumber: wholeNumber, sortText: sortText,
-    nameWords: nameWords, nameKey: nameKey, matchName: matchName, findColumn: findColumn, columnsOf: columnsOf, dataRows: dataRows,
+    nameWords: nameWords, nameKey: nameKey, matchName: matchName, closestNames: closestNames, findColumn: findColumn, columnsOf: columnsOf, dataRows: dataRows,
     setupDefaults: setupDefaults, readEvent: readEvent, readTables: readTables, readRules: readRules, ruleId: ruleId,
     readStudents: readStudents, readFaculty: readFaculty, readNotAttending: readNotAttending, readLocks: readLocks,
     readSeatingHistory: readSeatingHistory, readWaiterHistory: readWaiterHistory, readPastEvent: readPastEvent,
