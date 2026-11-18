@@ -12,7 +12,7 @@ The spec is `docs/spec.md` and is never rewritten. This file holds the calls mad
 - [x] 6. Check again
 - [x] 7. Save this event to history, Add a past event to history (the Candlelight version ends here)
 - [x] 8. The Together sort with neighboring tables
-- [ ] 9. Bundle script, demo script, e2e, safety and bundle tests, demo read as Mr. Gibbs would
+- [x] 9. Bundle script, demo script, e2e, safety and bundle tests, demo read as Mr. Gibbs would
 - [ ] 10. README, Done checklist, pull request
 
 ## Calls I made
