@@ -8,9 +8,9 @@ The spec is `docs/spec.md` and is never rewritten. This file holds the calls mad
 - [x] 2. core/read.js, setup tabs with defaults, Main.gs reading and write helpers, core/practice.js and Make practice data
 - [x] 3. core/seat.js steps 1 to 5 and 7, all rules
 - [x] 4. Waiters (step 8) and history reading
-- [ ] 5. core/output.js, every SM tab, Sort end to end, Sort again with a new shuffle
-- [ ] 6. Check again
-- [ ] 7. Save this event to history, Add a past event to history (the Candlelight version ends here)
+- [x] 5. core/output.js, every SM tab, Sort end to end, Sort again with a new shuffle
+- [x] 6. Check again
+- [x] 7. Save this event to history, Add a past event to history (the Candlelight version ends here)
 - [ ] 8. The Together sort with neighboring tables
 - [ ] 9. Bundle script, demo script, e2e, safety and bundle tests, demo read as Mr. Gibbs would
 - [ ] 10. README, Done checklist, pull request
