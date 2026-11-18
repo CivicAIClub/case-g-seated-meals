@@ -7,7 +7,7 @@ The spec is `docs/spec.md` and is never rewritten. This file holds the calls mad
 - [x] 1. Context: Cursor rule, AGENTS.md, this file, package.json, CI, .gitattributes, fake spreadsheet, smoke test
 - [x] 2. core/read.js, setup tabs with defaults, Main.gs reading and write helpers, core/practice.js and Make practice data
 - [x] 3. core/seat.js steps 1 to 5 and 7, all rules
-- [ ] 4. Waiters (step 8) and history reading
+- [x] 4. Waiters (step 8) and history reading
 - [ ] 5. core/output.js, every SM tab, Sort end to end, Sort again with a new shuffle
 - [ ] 6. Check again
 - [ ] 7. Save this event to history, Add a past event to history (the Candlelight version ends here)
