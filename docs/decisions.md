@@ -77,7 +77,7 @@ Calls Cayden or Mr. Gibbs should look at first are marked **(check)**.
 - Faculty names: the last word is the last name (for sorting SM Faculty).
 
 ### Repository
-- The first push failed: the GitHub login on this computer can't change `.github/workflows/` (its token lacks the `workflow` scope). Everything is committed locally on feature/seating-tool; the push needs `gh auth refresh -h github.com -s workflow` once, then `git push`.
+- The first push failed: the GitHub login on this computer can't change `.github/workflows/` (its token lacks the `workflow` scope). Adding the scope (`gh auth refresh -h github.com -s workflow`) fixed it; nothing was worked around.
 
 ## Done checklist
 
@@ -89,5 +89,5 @@ Calls Cayden or Mr. Gibbs should look at first are marked **(check)**.
 - [x] No real names, emails, links or spreadsheet IDs anywhere in the branch. Practice emails end in @example.org.
 - [x] No TODO, FIXME or placeholder logic in core/ or apps-script/.
 - [x] docs/spec.md is unchanged. This file lists every call. The README, AGENTS.md and the Cursor rule agree with both.
-- [ ] The PR is open into main, titled "Seated meals tool: first version for Candlelight", template filled in, not merged.
+- [x] The PR is open into main, titled "Seated meals tool: first version for Candlelight", template filled in, not merged.
 - [x] No Co-authored-by, Generated with, Made-with or any other AI attribution line in any commit message or the PR.
