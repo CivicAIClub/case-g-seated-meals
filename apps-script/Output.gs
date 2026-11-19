@@ -186,12 +186,25 @@ var SMOutput = (function () {
   function checkMessage(result) {
     return 'Checked: ' + result.check.failures + ' failures, ' + result.check.warnings + ' warnings. Read SM Check.';
   }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  // The finish message for Add a past event to history. Rows that matched nobody are counted on
+  // their own, because people who graduated or left are expected there.
+  function pastEventMessage(res, total, name, date) {
+    var lines = ['Matched ' + res.matched.length + ' of ' + total + ' rows and added them to history as ' + name + ' on ' + date + '.'];
+    if (res.unmatched) {
+      lines.push(plural(res.unmatched, 'row') + ' matched nobody (listed in SM Needs you). That is expected for people who graduated or left. ' +
+        'For anyone still at the school, type their email into their Past event row and run this again (it asks before replacing).');
+    }
+    if (res.problems) lines.push(plural(res.problems, 'row') + (res.problems === 1 ? ' needs' : ' need') + ' a person: see SM Needs you. Type the right email into those Past event rows and run this again (it asks before replacing).');
+    if (!res.unmatched && !res.problems) lines.push('Every row matched.');
+    return lines.join(' ');
+  }
 
   return {
     SEATING_NOTE: SEATING_NOTE, SEATING_HEADERS: SEATING_HEADERS, SHARED_HEADERS: SHARED_HEADERS, CHECK_HEADERS: CHECK_HEADERS, NEEDS_HEADERS: NEEDS_HEADERS,
     RUN_LOG_HEADERS: RUN_LOG_HEADERS, TAB_ORDER: TAB_ORDER,
     safeCell: safeCell, grid: grid, columnLetter: columnLetter, allTabs: allTabs, seatingTab: seatingTab, byTableTab: byTableTab,
     byFirstTab: byFirstTab, byFormTab: byFormTab, facultyTab: facultyTab, checkTab: checkTab, needsTab: needsTab,
-    runLogRow: runLogRow, sortMessage: sortMessage, checkMessage: checkMessage
+    runLogRow: runLogRow, sortMessage: sortMessage, checkMessage: checkMessage, pastEventMessage: pastEventMessage
   };
 }());

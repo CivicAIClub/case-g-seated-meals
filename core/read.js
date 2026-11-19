@@ -57,7 +57,11 @@ var SMRead = (function () {
     ['Faculty list', 'Name', 'Name', true],
     ['Faculty list', 'Email', 'Email', true],
     ['Faculty list', 'Group', 'Group|Advisory|AdvisorGroup', false],
-    ['Past event', 'Name', 'Name', true],
+    // The past event's name is one Name column, or first and last name columns joined. readPastEvent
+    // finds these three itself ('manual'), because "First Name" and "Last Name" both contain "Name".
+    ['Past event', 'Name', 'Name', false, 'manual'],
+    ['Past event', 'First name', 'First|First name|FirstName', false, 'manual'],
+    ['Past event', 'Last name', 'Last|Last name|LastName', false, 'manual'],
     ['Past event', 'Table', 'Table', true],
     ['Past event', 'Email', 'Email', false],
     ['Past event', 'Role', 'Role|Waiter', false],
@@ -148,9 +152,87 @@ var SMRead = (function () {
   function yes(v) { return /^y/.test(norm(v)); }
   function wholeNumber(v) { var s = text(v); return /^-?\d+$/.test(s) ? parseInt(s, 10) : NaN; }
   function sortText(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
   // Splits a list of names typed into one answer: commas, semicolons, "and", "&", "+" and line breaks.
   function splitNames(v) {
     return text(v).split(/\s*(?:,|;|&|\+|\r?\n|\band\b)\s*/i).map(text).filter(function (s) { return s !== ''; });
+  }
+
+  // ---------- Faculty answers, read the way people type them ----------
+
+  // Answers that mean nobody is joining (question 4), compared as lowercase words without
+  // punctuation. The slash stays, so "n/a" is "n/a".
+  var NOBODY = ['no', 'none', 'n/a', 'na', 'n a', 'nope', 'not', 'nobody', 'no one', 'noone', 'just me', 'only me', 'just myself', 'myself', 'me'];
+  // Words people add to a "no" that don't change it ("None this time", "No, thank you").
+  var NOBODY_EXTRAS = ['thanks', 'thank', 'you', 'this', 'time', 'at', 'for', 'now', 'guest', 'guests', 'sorry', 'coming', 'joining'];
+  // More answers that mean no request at all (question 6).
+  var NO_PREFERENCE = ['no preference', 'no preferences', 'anyone', 'anybody', 'whoever', 'anywhere', 'doesnt matter', 'does not matter', 'no one in particular'];
+  // Words that say who someone is rather than their name ("my wife", "our two kids").
+  var RELATION_WORDS = ['my', 'our', 'both', 'one', 'two', 'three', 'four', 'husband', 'wife', 'spouse', 'partner', 'son', 'sons',
+    'daughter', 'daughters', 'child', 'children', 'kid', 'kids', 'boyfriend', 'girlfriend', 'fiance', 'fiancee'];
+  // Words that, left on their own, name nobody ("also faculty", "too").
+  var FILLER_WORDS = ['also', 'too', 'faculty', 'staff', 'teacher', 'colleague', 'here', 'works', 'at', 'school', 'as', 'well', 'with', 'me'];
+
+  // A short answer as lowercase words without punctuation, to compare with the lists above.
+  function answerKey(v) { return norm(v).replace(/'/g, '').replace(/[^a-z0-9\/\s]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  // True when a whole answer means nobody: blank, "No", "None.", "N/A", "-", "No, just me".
+  // more lists extra answers that count (question 6 adds "No preference" and the like).
+  function meansNobody(v, more) {
+    var parts = text(v).split(/[,;]/).map(answerKey).filter(function (s) { return s !== ''; });
+    return parts.every(function (part) {
+      var core = part.split(' ').filter(function (w) { return NOBODY_EXTRAS.indexOf(w) < 0; }).join(' ');
+      return core === '' || NOBODY.indexOf(core) >= 0 || (more || []).indexOf(core) >= 0;
+    });
+  }
+  function isRelationWord(w) { var k = nameKey(w); return RELATION_WORDS.indexOf(k) >= 0 || /^\d+$/.test(k); }
+  // One typed guest made into a name: anything in parentheses dropped, and the words at the start
+  // that only say who they are ("my wife Sarah" leaves "Sarah"). name is '' when no name is left;
+  // relation says the piece named someone only by who they are ("My husband").
+  function cleanGuest(piece) {
+    var words = text(piece).replace(/\([^)]*\)/g, ' ').split(/\s+/).filter(function (w) { return w !== ''; }), relation = false;
+    while (words.length && isRelationWord(words[0])) { words.shift(); relation = true; }
+    var onlyFiller = words.every(function (w) { return FILLER_WORDS.indexOf(nameKey(w)) >= 0; });
+    var name = words.join(' ').replace(/^[\s,.:;!-]+|[\s,.:;!-]+$/g, '');
+    return { name: onlyFiller ? '' : name, relation: relation };
+  }
+  // Splits a question 4 answer like splitNames, and notes which pieces came right after a bare
+  // comma: in "My husband, John" the comma joins a label to a name rather than adding a person.
+  function splitPieces(v) {
+    var parts = text(v).split(/(\s*(?:,|;|&|\+|\r?\n|\band\b)\s*)/i), pieces = [], sep = '';
+    for (var i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) { sep += parts[i]; continue; } // the separators are at the odd places
+      if (text(parts[i]) === '') continue;
+      pieces.push({ text: text(parts[i]), afterComma: pieces.length > 0 && /^\s*,\s*$/.test(sep) });
+      sep = '';
+    }
+    return pieces;
+  }
+  // Question 4, cleaned. names: the typed names left after cleaning. mentioned: the answer said
+  // someone is coming, even with no name ("Yes", "My wife"). unnamed: how many people it mentions
+  // only by who they are ("and my son"); each needs a seat like a named guest. A piece like
+  // "My husband" joined to a name by just a comma ("My husband, John" or "John, my husband")
+  // labels that name instead of adding a person, unless the name already says who it is
+  // ("My wife Sarah, my son" is two people).
+  function guestAnswer(v) {
+    if (meansNobody(v)) return { names: [], mentioned: false, unnamed: 0 };
+    var rest = text(v).replace(/^\s*yes\b[\s,.:;!-]*/i, '');
+    var pieces = splitPieces(rest).map(function (p) { var c = cleanGuest(p.text); c.afterComma = p.afterComma; return c; });
+    var names = [], unnamed = 0, labeled = {};
+    // A name piece can take one label when it has no relation words of its own.
+    function canLabel(k) { var p = pieces[k]; return !!(p && p.name && !p.relation && !labeled[k]); }
+    pieces.forEach(function (p, k) {
+      if (p.name) { names.push(p.name); return; }
+      if (!p.relation) return;
+      if (p.afterComma && canLabel(k - 1)) labeled[k - 1] = true;
+      else if (pieces[k + 1] && pieces[k + 1].afterComma && canLabel(k + 1)) labeled[k + 1] = true;
+      else unnamed++;
+    });
+    return { names: names, mentioned: true, unnamed: unnamed };
+  }
+  // Question 6, cleaned: the colleague names typed, or none for "No preference" and the like.
+  function colleagueAnswer(v) {
+    if (meansNobody(v, NO_PREFERENCE)) return [];
+    return splitNames(v).filter(function (piece) { return !meansNobody(piece, NO_PREFERENCE); });
   }
 
   // ---------- Name matching (used for faculty answers and by SMHistory for past events) ----------
@@ -189,7 +271,8 @@ var SMRead = (function () {
       function (k) { return w.length === k.lastCount + 1 && tail === k.last && (k.shownInitial === initial || k.legalInitial === initial); }
     ];
     for (var s = 0; s < steps.length; s++) {
-      var hits = people.filter(function (p) { return steps[s](matchKeys(p)); });
+      // A person matches a step when any name they go by does.
+      var hits = people.filter(function (p) { return matchKeys(p).some(steps[s]); });
       if (hits.length === 1) return { match: hits[0], ambiguous: [], closest: [] };
       if (hits.length > 1) return { match: null, ambiguous: hits, closest: hits.slice(0, 3) };
     }
@@ -200,21 +283,56 @@ var SMRead = (function () {
   function closestNames(typed, people) {
     var joined = nameKey(typed);
     return people.map(function (p) {
-      var k = matchKeys(p);
-      return { p: p, d: Math.min(distance(joined, k.shown), distance(joined, k.legal)), key: k.shown };
+      var keys = matchKeys(p), d = Infinity;
+      keys.forEach(function (k) { d = Math.min(d, distance(joined, k.shown), distance(joined, k.legal)); });
+      return { p: p, d: d, key: keys[0].shown };
     }).sort(function (a, b) { return a.d - b.d || sortText(a.key, b.key); }).slice(0, 3).map(function (x) { return x.p; });
   }
   // The name forms matchName compares, worked out once per person and kept on the object, so
-  // matching hundreds of rows stays fast in Apps Script.
+  // matching hundreds of rows stays fast in Apps Script. One set for each name a person goes by:
+  // their name in Students or on the Faculty list, plus any in p.otherNames (for faculty, the
+  // name they typed into the form when it differs from the list).
   function matchKeys(p) {
     if (p.matchKeys) return p.matchKeys;
-    var last = nameWords(p.last), shown = nameKey(p.shownFirst), legal = nameKey(p.legalFirst);
-    p.matchKeys = {
-      shown: nameKey(p.shownFirst + ' ' + p.last), legal: nameKey(p.legalFirst + ' ' + p.last),
-      lastShown: nameKey(p.last + ' ' + p.shownFirst), lastLegal: nameKey(p.last + ' ' + p.legalFirst),
+    var sets = [keySet(p.shownFirst, p.legalFirst, p.last)];
+    (p.otherNames || []).forEach(function (n) { sets.push(keySet(n.first, n.first, n.last)); });
+    p.matchKeys = sets;
+    return sets;
+  }
+  function keySet(shownFirst, legalFirst, lastName) {
+    var last = nameWords(lastName), shown = nameKey(shownFirst), legal = nameKey(legalFirst);
+    return {
+      shown: nameKey(shownFirst + ' ' + lastName), legal: nameKey(legalFirst + ' ' + lastName),
+      lastShown: nameKey(lastName + ' ' + shownFirst), lastLegal: nameKey(lastName + ' ' + legalFirst),
       last: last.join(' '), lastCount: last.length, shownInitial: shown.charAt(0), legalInitial: legal.charAt(0)
     };
-    return p.matchKeys;
+  }
+  // True when the words of a full name appear one after another inside the typed words, as in
+  // "my husband John Smithson".
+  function containsWords(words, part) {
+    for (var i = 0; i + part.length <= words.length; i++) {
+      var same = true;
+      for (var j = 0; j < part.length && same; j++) same = words[i + j] === part[j];
+      if (same) return true;
+    }
+    return false;
+  }
+  // The people whose full name (first and last, any name they go by) appears inside a typed answer.
+  function namedInside(typed, people) {
+    var words = nameWords(typed);
+    return people.filter(function (p) {
+      return matchKeys(p).some(function (k) {
+        return [k.shown, k.legal].some(function (full) { var part = full.split(' '); return part.length > 1 && containsWords(words, part); });
+      });
+    });
+  }
+  // A faculty name as first and last name. "Last, First" is turned around; otherwise the last
+  // word is the last name.
+  function splitFacultyName(name) {
+    var t = text(name), comma = t.indexOf(',');
+    if (comma > 0) return { first: text(t.slice(comma + 1)), last: text(t.slice(0, comma)) };
+    var words = t.split(/\s+/);
+    return { first: words.slice(0, -1).join(' ') || words[0] || '', last: words.length > 1 ? words[words.length - 1] : '' };
   }
 
   // ---------- Columns ----------
@@ -248,11 +366,21 @@ var SMRead = (function () {
   function columnsOf(tab, values, ev, headerRow) {
     var headers = ((values && values[headerRow || 0]) || []).map(text), idx = {};
     COLUMNS.forEach(function (c) {
-      if (c[0] !== tab) return;
-      var kw = (CONFIGURABLE[tab] && ev && ev.columns[tab + ' ' + c[1]]) || c[2];
-      idx[c[1]] = findColumn(headers, kw, c[3], tab, c[1]);
+      if (c[0] !== tab || c[4] === 'manual') return;
+      idx[c[1]] = findColumn(headers, keywordFor(c, ev), c[3], tab, c[1]);
     });
     return { headers: headers, idx: idx };
+  }
+  // A column's keyword: the "Column: <tab> <name>" row in Event when there is one, else the default.
+  function keywordFor(c, ev) { return (CONFIGURABLE[c[0]] && ev && ev.columns[c[0] + ' ' + c[1]]) || c[2]; }
+  function columnDef(tab, label) { return COLUMNS.filter(function (c) { return c[0] === tab && c[1] === label; })[0]; }
+  // The first header that is exactly one of a keyword's alternatives, or -1.
+  function exactColumn(headers, keyword) {
+    var alts = String(keyword).split('|').map(norm);
+    for (var a = 0; a < alts.length; a++) {
+      for (var i = 0; i < headers.length; i++) if (alts[a] !== '' && norm(headers[i]) === alts[a]) return i;
+    }
+    return -1;
   }
   // The non-blank rows below the header, each with its spreadsheet row number.
   function dataRows(values, headerRow) {
@@ -539,11 +667,17 @@ var SMRead = (function () {
   // Mentor, and their group from the Faculty list. Problems go to needs.
   function readFaculty(formValues, listValues, ev, needs) {
     var adults = [], byId = {};
+    function need(p, problem) { needs.push({ section: 'Data problems', name: p.name, email: p.email, problem: problem }); }
+    // The name shown everywhere, split into first and last name for sorting and matching.
+    function setName(p, name) {
+      var parts = splitFacultyName(name);
+      p.name = text(name); p.legalFirst = p.shownFirst = parts.first; p.last = parts.last;
+    }
     function person(email, name, row) {
-      var id = email ? email.toLowerCase() : 'faculty-row:' + row, words = text(name).split(/\s+/);
-      var p = { id: id, email: email, name: text(name), legalFirst: words.slice(0, -1).join(' ') || words[0] || '', last: words.length > 1 ? words[words.length - 1] : '',
+      var id = email ? email.toLowerCase() : 'faculty-row:' + row;
+      var p = { id: id, email: email, name: '', legalFirst: '', shownFirst: '', last: '', otherNames: [],
         group: '', answered: false, onList: false, attending: false, guestNames: [], guestSeats: 0, householdIds: [], colleagueIds: [], isNew: false, isMentor: false, row: row };
-      p.shownFirst = p.legalFirst;
+      setName(p, name);
       byId[id] = p; adults.push(p);
       return p;
     }
@@ -575,12 +709,12 @@ var SMRead = (function () {
         var p = byId[a.email ? a.email.toLowerCase() : 'faculty-row:' + a.row];
         if (!p) {
           p = person(a.email, a.name, a.row);
-          if (hasList) needs.push({ section: 'Data problems', name: a.name, email: a.email, problem: 'Answered the faculty form but is not on Faculty list. Seated anyway.' });
+          if (hasList) need(p, 'Answered the faculty form but is not on Faculty list. Seated anyway.');
         }
-        if (a.name) p.name = a.name;
-        var words = p.name.split(/\s+/);
-        p.legalFirst = p.shownFirst = words.slice(0, -1).join(' ') || words[0];
-        p.last = words.length > 1 ? words[words.length - 1] : '';
+        // On the Faculty list, the list's name is shown, because names typed into the form can be
+        // lowercase, nicknames or "Last, First". The typed name still matches.
+        if (a.name && (!p.onList || !p.name)) setName(p, a.name);
+        else if (a.name && nameKey(a.name) !== nameKey(p.name)) p.otherNames.push(splitFacultyName(a.name));
         p.answered = true;
         p.answer = a;
         p.attending = !/^n/.test(norm(a.attend));
@@ -589,55 +723,103 @@ var SMRead = (function () {
         p.isMentor = !p.isNew && n.indexOf('glad') >= 0;
       });
     }
-    adults.forEach(function (p) {
-      if (p.answered || !p.onList) return;
-      if (ev.facultyNoAnswer === 'Seat') p.attending = true;
-      else needs.push({ section: 'Data problems', name: p.name, email: p.email, problem: 'On Faculty list but didn\'t answer the faculty form, so not seated. Ask them, or set "Faculty who didn\'t answer" in Event to Seat.' });
-    });
 
     // Names typed in the answers are matched to the faculty: by email, then by name words.
+    function others(self) { return adults.filter(function (a) { return a !== self; }); }
     function findAdult(typed, self) {
       if (typed.indexOf('@') >= 0) {
         var hit = byId[norm(typed)];
         return { match: hit && hit !== self ? hit : null, ambiguous: [], closest: [] };
       }
-      return matchName(typed, adults.filter(function (a) { return a !== self; }));
+      return matchName(typed, others(self));
     }
+    // The name as typed, or else a faculty member's full name inside it ("John Smithson, also
+    // faculty", "Jane Smithson from the science department").
+    function findColleague(typed, self) {
+      var m = findAdult(typed, self);
+      if (m.match || m.ambiguous.length) return m;
+      var inside = namedInside(typed, others(self));
+      if (inside.length === 1) return { match: inside[0], ambiguous: [], closest: [] };
+      if (inside.length > 1) return { match: null, ambiguous: inside, closest: inside.slice(0, 3) };
+      return m;
+    }
+    // A question 4 name that means a faculty member, so a spouse who also works at the school sits
+    // as a household: found as for a colleague, or a first name alone with the answerer's own last
+    // name (Jane Smithson writing "my husband John" means John Smithson).
+    function findPartner(typed, self) {
+      var m = findColleague(typed, self);
+      if (m.match || m.ambiguous.length) return m;
+      if (nameWords(typed).length === 1 && self.last) return findAdult(typed + ' ' + self.last, self);
+      return m;
+    }
+    // Puts a faculty member named in question 4 in p's household. One who answered No is not
+    // seated. One on the Faculty list who didn't answer is coming with p, so is seated with them.
+    function linkPartner(p, q) {
+      if (q.answered && !q.attending) {
+        need(p, p.name + ' named ' + q.name + ' as joining, but ' + q.name + ' answered No, so ' + q.name + ' is not seated.');
+        return;
+      }
+      if (!q.answered && !q.joinedBy) {
+        q.attending = true;
+        q.joinedBy = p;
+        need(q, 'Named by ' + p.name + ' as joining them, so seated together, but didn\'t answer the form.');
+      }
+      if (p.householdIds.indexOf(q.id) < 0) p.householdIds.push(q.id);
+    }
+    // How many guest seats to hold, and the SM Needs you rows when questions 4 and 5 disagree.
+    // Never fewer seats than the guests the answer names or mentions ("and my son"): an empty seat
+    // is a smaller problem than a guest without one.
+    function guestSeatCount(p, q4, asked, facultyNamed) {
+      var named = p.guestNames.length, guests = named + q4.unnamed, list = named ? ' (' + p.guestNames.join(', ') + ')' : '';
+      var said = 'Said someone is joining ("' + text(p.answer.guests) + '")';
+      // The problem starts with the names when they are the whole count, else with the answer.
+      var told = q4.unnamed || !named ? said : 'Named ' + plural(named, 'guest');
+      if (!isNaN(asked)) {
+        var seats = Math.max(0, asked - facultyNamed);
+        if (guests > seats) {
+          need(p, told + ' but asked for ' + plural(seats, 'seat') + '. Held ' + plural(guests, 'seat') + list + '.');
+          return guests;
+        }
+        if (seats === 0 && q4.mentioned && !facultyNamed) need(p, said + ' but asked for 0 seats, so none was held.');
+        return seats;
+      }
+      // Question 5 left blank: a seat for each guest named or mentioned, and at least one when the
+      // answer says someone is coming.
+      var held = Math.max(guests, q4.mentioned && !facultyNamed ? 1 : 0);
+      if (held > 0) need(p, told + ' but didn\'t say how many seats. Held ' + plural(held, 'seat') + list + '.');
+      return held;
+    }
+
     adults.forEach(function (p) {
       if (!p.answered || !p.attending) return;
-      var a = p.answer, facultyNamed = 0;
-      splitNames(a.guests).forEach(function (typed) {
-        var m = findAdult(typed, p);
-        if (m.match) {
-          facultyNamed++;
-          if (m.match.attending !== false && p.householdIds.indexOf(m.match.id) < 0) p.householdIds.push(m.match.id);
-        } else {
-          if (m.ambiguous.length) needs.push({ section: 'Data problems', name: p.name, email: p.email, problem: 'Guest "' + typed + '" matches more than one faculty member (' + m.ambiguous.map(function (x) { return x.name; }).join(', ') + '). Held a guest seat for them.' });
-          p.guestNames.push(typed);
-        }
+      var a = p.answer, q4 = guestAnswer(a.guests), facultyNamed = 0;
+      q4.names.forEach(function (typed) {
+        var m = findPartner(typed, p);
+        if (m.match) { facultyNamed++; linkPartner(p, m.match); return; }
+        if (m.ambiguous.length) need(p, 'Guest "' + typed + '" matches more than one faculty member (' + m.ambiguous.map(function (x) { return x.name; }).join(', ') + '). Held a guest seat for them.');
+        p.guestNames.push(typed);
       });
-      var seats = wholeNumber(a.seats);
-      if (a.seats !== '' && (isNaN(seats) || seats < 0)) {
-        needs.push({ section: 'Data problems', name: p.name, email: p.email, problem: 'Guest seats answer "' + a.seats + '" is not a number; read as 0.' });
-        seats = 0;
+      var asked = wholeNumber(a.seats);
+      if (a.seats !== '' && (isNaN(asked) || asked < 0)) {
+        need(p, 'Guest seats answer "' + a.seats + '" is not a number, so it was read as blank.');
+        asked = NaN;
       }
-      if (isNaN(seats)) seats = 0;
-      // A faculty spouse named in question 4 sits as a household, not in a guest seat.
-      seats = Math.max(0, seats - facultyNamed);
-      if (p.guestNames.length > seats) {
-        needs.push({ section: 'Data problems', name: p.name, email: p.email, problem: 'Named ' + p.guestNames.length + ' guests but asked for ' + seats + (seats === 1 ? ' seat' : ' seats') + '. Held ' + p.guestNames.length + ' seats.' });
-        seats = p.guestNames.length;
-      }
-      p.guestSeats = seats;
-      splitNames(a.colleagues).forEach(function (typed) {
-        var m = findAdult(typed, p);
+      p.guestSeats = guestSeatCount(p, q4, asked, facultyNamed);
+      colleagueAnswer(a.colleagues).forEach(function (typed) {
+        var m = findColleague(typed, p);
         if (m.match) { if (p.colleagueIds.indexOf(m.match.id) < 0) p.colleagueIds.push(m.match.id); }
-        else if (m.ambiguous.length) needs.push({ section: 'Data problems', name: p.name, email: p.email, problem: 'Colleague "' + typed + '" matches more than one faculty member: ' + m.ambiguous.map(function (x) { return x.name; }).join(', ') + '.' });
+        else if (m.ambiguous.length) need(p, 'Colleague "' + typed + '" matches more than one faculty member: ' + m.ambiguous.map(function (x) { return x.name; }).join(', ') + '.');
         else {
-          var near = closestNames(typed, adults.filter(function (x) { return x !== p; }));
-          needs.push({ section: 'Data problems', name: p.name, email: p.email, problem: 'Colleague "' + typed + '" doesn\'t match anyone on the faculty.' + (near.length ? ' Closest: ' + near.map(function (x) { return x.name; }).join(', ') + '.' : '') });
+          var near = closestNames(typed, others(p));
+          need(p, 'Colleague "' + typed + '" doesn\'t match anyone on the faculty.' + (near.length ? ' Closest: ' + near.map(function (x) { return x.name; }).join(', ') + '.' : ''));
         }
       });
+    });
+    // Faculty list people who didn't answer (and weren't named as coming by a partner).
+    adults.forEach(function (p) {
+      if (p.answered || !p.onList || p.joinedBy) return;
+      if (ev.facultyNoAnswer === 'Seat') p.attending = true;
+      else need(p, 'On Faculty list but didn\'t answer the faculty form, so not seated. Ask them, or set "Faculty who didn\'t answer" in Event to Seat.');
     });
     // Households go both ways: if one names the other, both are linked.
     adults.forEach(function (p) {
@@ -669,18 +851,41 @@ var SMRead = (function () {
       return { row: r.row, event: get('Event'), date: dateKey(r.cells[idx.Date]), email: get('Email'), id: get('Email').toLowerCase(), name: get('Name'), role: get('Role') };
     });
   }
-  // A Role or Waiter cell read as Waiter, Assistant or ''.
+  // A Role or Waiter cell read as Waiter, Assistant or ''. Assistant is checked first, because
+  // "Asst. Waiter" contains "waiter". His files mark them W and AW.
   function roleOf(v) {
-    var n = norm(v);
-    if (n.indexOf('assist') >= 0) return 'Assistant';
-    if (n.indexOf('waiter') >= 0 || /^(y|yes|w|x)$/.test(n)) return 'Waiter';
+    var n = norm(v).replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (n === '') return '';
+    if (/\bassist/.test(n) || /\basst\b/.test(n) || n === 'a' || n === 'aw') return 'Assistant';
+    if (n.indexOf('waiter') >= 0 || /^(w|y|yes|x)$/.test(n)) return 'Waiter';
     return '';
   }
-  // The Past event tab: one pasted seating list. Guest rows are skipped.
+  // A Table cell read as a table number and anything after it: "12", "12 W", "Table 12".
+  function tableCell(v) {
+    var m = text(v).match(/^(?:table\s*)?(\d+)(?:\.0+)?\s*(.*)$/i);
+    return m ? { table: +m[1], rest: text(m[2]) } : { table: NaN, rest: '' };
+  }
+  // Where the Past event's names are: a column that is exactly the Name keyword; else first and
+  // last name columns, joined; else the Name keyword as usual (which stops with a message naming
+  // the headers when it can't find one column).
+  function pastNameColumns(headers, ev) {
+    var nameKw = keywordFor(columnDef('Past event', 'Name'), ev), exact = exactColumn(headers, nameKw);
+    if (exact >= 0) return { name: exact };
+    var first = findColumn(headers, keywordFor(columnDef('Past event', 'First name'), ev), false, 'Past event', 'First name');
+    var last = findColumn(headers, keywordFor(columnDef('Past event', 'Last name'), ev), false, 'Past event', 'Last name');
+    if (first >= 0 && last >= 0 && first !== last) return { first: first, last: last };
+    return { name: findColumn(headers, nameKw, true, 'Past event', 'Name') };
+  }
+  // The Past event tab: one pasted seating list, one row per person. Guest rows are skipped. A
+  // class year written after a name ("Testwood, Avery '27") is dropped.
   function readPastEvent(values, ev) {
-    if (!values || values.length < 2) throw new Error('The Past event tab is missing or empty. Paste one past seating list into a tab named Past event, with at least a Name and a Table column.');
-    return readSimple('Past event', values, ev, function (r, get) {
-      return { row: r.row, name: get('Name'), table: wholeNumber(get('Table')), tableText: get('Table'), email: get('Email'), role: roleOf(get('Role')) };
+    if (!values || values.length < 2) throw new Error('The Past event tab is missing or empty. Paste one past seating list into a tab named Past event, with a Name column (or first and last name columns) and a Table column.');
+    var c = columnsOf('Past event', values, ev), names = pastNameColumns(c.headers, ev);
+    return dataRows(values).map(function (r) {
+      var name = names.name !== undefined ? cellText(r, names.name) : text(cellText(r, names.first) + ' ' + cellText(r, names.last));
+      var cell = tableCell(cellText(r, c.idx.Table));
+      return { row: r.row, name: name.replace(/\s*['‘’]\d{2}$/, ''), table: cell.table, tableText: cellText(r, c.idx.Table), email: cellText(r, c.idx.Email),
+        role: roleOf(cellText(r, c.idx.Role)) || roleOf(cell.rest) };
     }).filter(function (r) { return r.name !== '' && !/^guest\b/i.test(r.name); });
   }
   // SM Seating: a note on row 1, headers below it. The header row is the first with Table and Name.

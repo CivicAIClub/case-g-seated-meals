@@ -63,7 +63,7 @@ Calls Cayden or Mr. Gibbs should look at first are marked **(check)**.
 - Save this event to history saves students and faculty (guests are not tracked) and every Waiter and Assistant.
 
 ### Sheets side
-- Two write helpers beyond the spec's three: `rewriteHistory_` (only Seating history and Waiter history, only after the person says Yes to replacing an event) and `setEventValue_` (only Seed, for Sort again, and Season, for practice data). Make practice data uses its own `writePracticeTabs_`, which refuses if Students or Faculty has data. The safety test fails on any write outside these six.
+- Two write helpers beyond the spec's three: `rewriteHistory_` (only Seating history and Waiter history, only after the person says Yes to replacing an event) and `setEventValue_` (only Seed, for Sort again, and Season, for practice data). Make practice data uses its own `writePracticeTabs_`, which refuses if Students or Faculty has data. The safety test fails on any write outside these six and `makeRoom_` (added in fix round 1, below).
 - SM Seating has its note on row 1 and headers on row 2 (both frozen). Check again finds the header row by its Table and Name headers.
 - Guest rows in SM Seating carry their host's email in the Email column, so Check again knows whose guest each row is. SM Needs you has the columns Section, Name, Email, Problem.
 - Sort again asks its two questions before adding 1 to the Seed, so Cancel leaves the Seed alone.
@@ -78,6 +78,26 @@ Calls Cayden or Mr. Gibbs should look at first are marked **(check)**.
 
 ### Repository
 - The first push failed: the GitHub login on this computer can't change `.github/workflows/` (its token lacks the `workflow` scope). Adding the scope (`gh auth refresh -h github.com -s workflow`) fixed it; nothing was worked around.
+
+### Fix round 1 (Nov 18, after the review of the first version)
+
+Found by running the tool on answers typed the way faculty really type them, and on the layouts of Mr. Gibbs's past seating files.
+
+- Question 4 answers that mean nobody hold no seat and need no one: No, None, N/A, Nope, Nobody, No one, Not, Just me, Only me, Myself or a dash, also with polite words added ("None this time", "No, thank you"), and one part of an answer at a time ("No, just me").
+- In question 4, a leading "Yes" is dropped, words at the start of a name that only say who someone is (my, our, a number, husband, wife, spouse, partner, son, daughter, child, kids, boyfriend, girlfriend, fiance) are dropped, and anything in parentheses is dropped. A piece left with only words like "also faculty" names nobody. So "Yes, my wife Sarah" is a guest named Sarah, and "My husband, John" is one guest, John.
+- **(check)** Guest seats count everyone question 4 names or mentions only by who they are, so "My wife Sarah and my son" holds two seats (found in Keke's review of PR #5). A piece like "My husband" joined to a name by just a comma ("My husband, John", "John, my husband") labels that name instead of adding a person, unless the name already says who it is ("My wife Sarah, my son" is two people). Never fewer seats than that count, whatever question 5 says, and SM Needs you says when they disagree.
+- **(check)** Question 5 left blank: a seat for each guest named or mentioned, and at least one when the answer says someone is coming ("Yes" alone holds one seat). SM Needs you says so. An explicit 0 is kept when the answer names and mentions nobody ("Yes" with 0), and SM Needs you flags it.
+- SM Needs you rows for more guest names than seats now list the names, so a person can see at a glance whether a "guest" is really a name.
+- A faculty member's full name anywhere in a question 4 or 6 answer counts ("My husband John Smithson", "John Smithson, also faculty", "Jane Brightwater from the science department"). In question 4, a first name alone with the answerer's own last name counts too (Jane Smithson writing "my husband John" means John Smithson, when exactly one faculty member has that name).
+- **(check)** A faculty member on Faculty list who didn't answer the form, named in question 4 by someone who is coming, is seated with that person as a household, and SM Needs you says so. Before, the partner's seat for them was removed and they weren't seated at all.
+- A faculty member named in question 4 who answered No is not seated and takes no guest seat; SM Needs you says the two answers disagree.
+- **(check)** Faculty who are both coming and share a last name, but didn't name each other, are asked to sit together the way a colleague request works (together when a table has room; not a hard limit). Their Why line says "Same last name as <name>". Mr. Gibbs always seats same-surname faculty together. When a table with no adult takes someone from another table, people sitting with a colleague they asked for or share a last name with move last.
+- Question 6 answers like "No preference", "Anyone", "Anybody", "Whoever" or "Doesn't matter" ask for nobody and need no one.
+- When someone is on Faculty list, the list's name is shown everywhere, and the name typed into the form is kept as another name they go by, for matching. A name typed as "Last, First" is split at the comma for sorting and matching.
+- Past event names: a header that is exactly "Name" wins; otherwise first and last name columns are joined ("Column: Past event First name" and "Column: Past event Last name" rows in Event set their keywords); otherwise the Name keyword as before. A class year after a name ("Testwood, Avery '27") is dropped.
+- Past event roles: W, Waiter, Yes and X are the waiter; AW, A, Asst, Asst. Waiter, Assistant and Assistant Waiter are the assistant (checked first, since "Asst. Waiter" contains "waiter"). A Table cell that starts with a number ("12", "12 W", "Table 12") is that table, and the rest of the cell is read as the role when the Role column doesn't give one.
+- Past event rows that match nobody (by name, or an email nobody has) are often people who graduated or left, so their SM Needs you advice says to ignore them in that case, and the finish message counts them apart from the rows that need a person.
+- A new write helper, `makeRoom_`, adds rows or columns at the end of a tab before any write that needs them, because a real Google Sheets tab has 1,000 rows and 26 columns when new and a write past them stops with an error. Seating history passes 1,000 rows after about three dinners. The fake spreadsheet now has the same limits, and the safety test counts inserting rows or columns as a write.
 
 ## Done checklist
 
